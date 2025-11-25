@@ -8,7 +8,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Copy, Check, Clock, Info } from 'lucide-react';
+import { Copy, Check, Clock, Info, Mic, Zap } from 'lucide-react';
 import type { Timestamp, GenerationMetadata } from '../types';
 
 interface TimestampListProps {
@@ -62,16 +62,35 @@ export function TimestampList({ timestamps, metadata }: TimestampListProps) {
               <Badge variant="outline" className="text-slate-300 border-slate-600">
                 {metadata.language.toUpperCase()}
               </Badge>
-              <Badge
-                variant="outline"
-                className={
-                  metadata.is_auto_generated
-                    ? 'text-yellow-400 border-yellow-600'
-                    : 'text-green-400 border-green-600'
-                }
-              >
-                {metadata.is_auto_generated ? 'Legendas Automáticas' : 'Legendas Manuais'}
-              </Badge>
+              {metadata.used_speech_to_text ? (
+                <Badge
+                  variant="outline"
+                  className="text-purple-400 border-purple-600"
+                >
+                  <Mic className="mr-1 h-3 w-3" />
+                  Speech-to-Text (Whisper)
+                </Badge>
+              ) : (
+                <Badge
+                  variant="outline"
+                  className={
+                    metadata.is_auto_generated
+                      ? 'text-yellow-400 border-yellow-600'
+                      : 'text-green-400 border-green-600'
+                  }
+                >
+                  {metadata.is_auto_generated ? 'Legendas Automáticas' : 'Legendas Manuais'}
+                </Badge>
+              )}
+              {metadata.from_cache && (
+                <Badge
+                  variant="outline"
+                  className="text-yellow-400 border-yellow-600"
+                >
+                  <Zap className="mr-1 h-3 w-3" />
+                  Cache Hit (Rápido)
+                </Badge>
+              )}
               <Badge variant="outline" className="text-slate-300 border-slate-600">
                 {metadata.validated_count} de {metadata.total_candidates} validados
               </Badge>

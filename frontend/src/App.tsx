@@ -4,11 +4,11 @@ import { TimestampList } from './components/TimestampList';
 import { LoadingState } from './components/LoadingState';
 import { ErrorDisplay } from './components/ErrorDisplay';
 import { generateTimestamps } from './services/api';
-import type { Timestamp, GenerationMetadata, GenerationOptions } from './types';
+import type { Timestamp, GenerationMetadata, GenerationOptions, ApiError } from './types';
 
 function App() {
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
   const [timestamps, setTimestamps] = useState<Timestamp[]>([]);
   const [metadata, setMetadata] = useState<GenerationMetadata | null>(null);
   const [lastUrl, setLastUrl] = useState('');
@@ -26,8 +26,22 @@ function App() {
       const result = await generateTimestamps(url, options);
       setTimestamps(result.timestamps);
       setMetadata(result.metadata);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
+    } catch (err: any) {
+      // Handle structured error from backend
+      if (err && err.code && err.suggestions) {
+        setError({
+          message: err.message,
+          code: err.code,
+          suggestions: err.suggestions,
+        });
+      } else {
+        // Fallback for generic errors
+        setError({
+          message: err instanceof Error ? err.message : 'Erro desconhecido',
+          code: 'UNKNOWN_ERROR',
+          suggestions: ['Tente novamente', 'Verifique sua conexão com a internet'],
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -63,10 +77,13 @@ function App() {
 
         <footer className="text-center mt-12 text-slate-500 text-sm">
           <p>
-            Desenvolvido com React, FastAPI e OpenAI GPT-4o-mini
+            Desenvolvido com React, FastAPI e OpenAI (GPT-4o-mini + Whisper)
           </p>
           <p className="mt-1">
-            Os timestamps são gerados com base na transcrição real do vídeo
+            Os timestamps são gerados com base na transcrição do vídeo
+          </p>
+          <p className="mt-1">
+            Suporte para vídeos com e sem legendas (speech-to-text automático)
           </p>
         </footer>
       </div>

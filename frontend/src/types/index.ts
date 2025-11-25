@@ -9,6 +9,8 @@ export interface GenerationMetadata {
   video_id: string;
   language: string;
   is_auto_generated: boolean;
+  used_speech_to_text?: boolean;
+  from_cache?: boolean;
   total_candidates: number;
   validated_count: number;
 }
@@ -21,4 +23,10 @@ export interface GenerationOptions {
 export interface ApiResponse {
   timestamps: Timestamp[];
   metadata: GenerationMetadata;
+}
+
+export interface ApiError {
+  message: string;
+  code: string;
+  suggestions: string[];
 }

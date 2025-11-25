@@ -44,3 +44,12 @@ env/
 
 # Poetry cache
 .poetry/
+
+# Temporary files
+temp/
+*.mp3
+*.wav
+*.m4a
+
+# Cache files
+cache/

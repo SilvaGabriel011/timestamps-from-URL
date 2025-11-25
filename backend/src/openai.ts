@@ -1,6 +1,39 @@
 import OpenAI from 'openai';
-import type { Transcript, TimestampCandidate } from './types';
+import type { Transcript, TimestampCandidate, TranscriptSegment } from './types';
 import { formatTranscriptForAI } from './youtube';
+import { parseOpenAIError } from './errors';
+
+// Maximum transcript length in characters (~100k tokens for GPT-4o-mini)
+// 1 token ≈ 4 characters, so 100k tokens ≈ 400k characters
+const MAX_TRANSCRIPT_CHARS = 350000;
+
+/**
+ * Sample transcript segments to fit within token limits
+ * Takes evenly distributed samples across the video duration
+ */
+function sampleTranscript(segments: TranscriptSegment[]): TranscriptSegment[] {
+  const formatted = formatTranscriptForAI(segments);
+  
+  // If transcript is within limits, return all segments
+  if (formatted.length <= MAX_TRANSCRIPT_CHARS) {
+    return segments;
+  }
+
+  // Calculate sampling ratio
+  const ratio = MAX_TRANSCRIPT_CHARS / formatted.length;
+  const sampleSize = Math.floor(segments.length * ratio);
+  
+  // Take evenly distributed samples
+  const step = segments.length / sampleSize;
+  const sampled: TranscriptSegment[] = [];
+  
+  for (let i = 0; i < sampleSize; i++) {
+    const index = Math.floor(i * step);
+    sampled.push(segments[index]);
+  }
+  
+  return sampled;
+}
 
 const SYSTEM_PROMPT = `Você é um assistente especializado em análise de conteúdo de vídeo.
 Sua tarefa é identificar mudanças de tópico em transcrições de vídeos do YouTube.
@@ -35,8 +68,12 @@ export async function generateTimestampsWithAI(
 ): Promise<{ timestamps: TimestampCandidate[] }> {
   const client = new OpenAI({ apiKey });
 
+  // Sample transcript if too long (for videos >45 minutes)
+  const sampledSegments = sampleTranscript(transcript.segments);
+  const isSampled = sampledSegments.length < transcript.segments.length;
+
   // Format transcript for AI
-  const transcriptText = formatTranscriptForAI(transcript.segments);
+  const transcriptText = formatTranscriptForAI(sampledSegments);
 
   // Calculate total duration
   const lastSegment = transcript.segments[transcript.segments.length - 1];
@@ -45,36 +82,45 @@ export async function generateTimestampsWithAI(
     : 0;
 
   // Create user prompt
+  const samplingNote = isSampled 
+    ? `\nNOTA: Esta é uma amostragem representativa de ${sampledSegments.length} de ${transcript.segments.length} segmentos devido ao tamanho do vídeo.`
+    : '';
+
   const userPrompt = `Analise a seguinte transcrição e identifique mudanças de tópico:
 
 TRANSCRIÇÃO:
 ${transcriptText}
 
 CONTEXTO DO VÍDEO:
-- Duração total: ${Math.floor(totalDuration)} segundos
+- Duração total: ${Math.floor(totalDuration)} segundos (${Math.floor(totalDuration / 60)} minutos)
 - Idioma: ${transcript.language}
 - Número de segmentos: ${transcript.segments.length}
-- Duração mínima entre timestamps: ${minSegmentDuration} segundos
+- Duração mínima entre timestamps: ${minSegmentDuration} segundos${samplingNote}
 
 Gere timestamps para as principais mudanças de tópico.`;
 
   // Call OpenAI
-  const response = await client.chat.completions.create({
-    model: 'gpt-4o-mini',
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: userPrompt },
-    ],
-    response_format: { type: 'json_object' },
-    temperature: 0.3,
-  });
+  try {
+    const response = await client.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: userPrompt },
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.3,
+    });
 
-  // Parse response
-  const content = response.choices[0]?.message?.content;
-  if (!content) {
-    throw new Error('Resposta vazia da IA');
+    // Parse response
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      throw new Error('Resposta vazia da IA');
+    }
+
+    const result = JSON.parse(content) as { timestamps: TimestampCandidate[] };
+    return result;
+  } catch (error: any) {
+    // Parse and throw specific OpenAI errors
+    throw parseOpenAIError(error);
   }
-
-  const result = JSON.parse(content) as { timestamps: TimestampCandidate[] };
-  return result;
 }
