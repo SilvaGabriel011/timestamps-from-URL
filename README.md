@@ -14,9 +14,9 @@ Generate automatic timestamps for YouTube videos using AI. This application extr
 ## Tech Stack
 
 ### Backend
-- Python 3.12+
-- FastAPI
-- youtube-transcript-api
+- Node.js 18+ with TypeScript
+- Express.js
+- youtube-transcript
 - OpenAI API (GPT-4o-mini)
 
 ### Frontend
@@ -30,8 +30,6 @@ Generate automatic timestamps for YouTube videos using AI. This application extr
 ### Prerequisites
 
 - Node.js 18+
-- Python 3.12+
-- Poetry (Python package manager)
 - OpenAI API key
 
 ### Backend Setup
@@ -43,7 +41,7 @@ Generate automatic timestamps for YouTube videos using AI. This application extr
 
 2. Install dependencies:
    ```bash
-   poetry install
+   npm install
    ```
 
 3. Create a `.env` file with your OpenAI API key:
@@ -54,7 +52,7 @@ Generate automatic timestamps for YouTube videos using AI. This application extr
 
 4. Start the development server:
    ```bash
-   poetry run fastapi dev app/main.py
+   npm run dev
    ```
 
 The API will be available at `http://localhost:8000`.
