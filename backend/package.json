@@ -19,12 +19,14 @@
   "description": "YouTube Timestamp Generator API using Node.js, Express, and OpenAI",
   "dependencies": {
     "@distube/ytdl-core": "^4.16.12",
+    "@ybd-project/ytdl-core": "^6.0.8",
     "axios": "^1.13.2",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "form-data": "^4.0.5",
     "openai": "^6.9.1",
+    "youtube-dl-exec": "^3.0.27",
     "youtube-transcript": "^1.2.1",
     "ytdl-core": "^4.11.5"
   },

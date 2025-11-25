@@ -44,9 +44,13 @@ export function validateTimestamps(
     lastTime = ts.time;
   }
 
+  // Log validation results
+  console.log(`[Validator] Total candidates: ${timestamps.length}, Validated: ${validated.length}`);
+  
   // Add initial timestamp if not present
   if (validated.length === 0 || validated[0].time > 10) {
     const firstSegment = transcript.segments[0];
+    console.log(`[Validator] Adding default 'Introdução' timestamp. Total segments: ${transcript.segments.length}`);
     validated.unshift({
       time: 0,
       title: 'Introdução',

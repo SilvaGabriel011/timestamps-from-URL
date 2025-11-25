@@ -1,4 +1,4 @@
-import ytdl from '@distube/ytdl-core';
+const ytdl = require('@ybd-project/ytdl-core');
 import fs from 'fs';
 import path from 'path';
 import { AppError } from './errors';
@@ -51,7 +51,7 @@ export async function downloadYouTubeAudio(
       const writeStream = fs.createWriteStream(outputPath);
       let downloadedBytes = 0;
 
-      stream.on('data', (chunk) => {
+      stream.on('data', (chunk: any) => {
         downloadedBytes += chunk.length;
         
         // Check size limit
@@ -72,7 +72,7 @@ export async function downloadYouTubeAudio(
         }
       });
 
-      stream.on('error', (error) => {
+      stream.on('error', (error: any) => {
         writeStream.destroy();
         if (fs.existsSync(outputPath)) {
           fs.unlinkSync(outputPath);

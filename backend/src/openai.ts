@@ -72,8 +72,13 @@ export async function generateTimestampsWithAI(
   const sampledSegments = sampleTranscript(transcript.segments);
   const isSampled = sampledSegments.length < transcript.segments.length;
 
+  console.log(`[OpenAI] Processing transcript with ${transcript.segments.length} segments`);
+  console.log(`[OpenAI] After sampling: ${sampledSegments.length} segments`);
+  
   // Format transcript for AI
   const transcriptText = formatTranscriptForAI(sampledSegments);
+  console.log(`[OpenAI] Transcript text length: ${transcriptText.length} characters`);
+  console.log(`[OpenAI] First 500 chars:`, transcriptText.substring(0, 500));
 
   // Calculate total duration
   const lastSegment = transcript.segments[transcript.segments.length - 1];
@@ -101,6 +106,7 @@ Gere timestamps para as principais mudanças de tópico.`;
 
   // Call OpenAI
   try {
+    console.log(`[OpenAI] Sending to GPT-4o-mini for timestamp generation...`);
     const response = await client.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
@@ -110,6 +116,7 @@ Gere timestamps para as principais mudanças de tópico.`;
       response_format: { type: 'json_object' },
       temperature: 0.3,
     });
+    console.log(`[OpenAI] Received response from GPT-4o-mini`);
 
     // Parse response
     const content = response.choices[0]?.message?.content;
@@ -118,6 +125,10 @@ Gere timestamps para as principais mudanças de tópico.`;
     }
 
     const result = JSON.parse(content) as { timestamps: TimestampCandidate[] };
+    console.log(`[OpenAI] Generated ${result.timestamps?.length || 0} timestamp candidates`);
+    if (result.timestamps && result.timestamps.length > 0) {
+      console.log(`[OpenAI] First timestamp:`, result.timestamps[0]);
+    }
     return result;
   } catch (error: any) {
     // Parse and throw specific OpenAI errors

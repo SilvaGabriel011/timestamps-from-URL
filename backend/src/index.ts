@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import { extractVideoId, getTranscript } from './youtube';
 import { generateTimestampsWithAI } from './openai';
 import { validateTimestamps } from './validator';
-import { getCacheStats, clearOldCache } from './cache';
+import { getCacheStats, clearOldCache, deleteCacheForVideo } from './cache';
 import type { VideoRequest, TimestampResponse } from './types';
 import { 
   AppError, 
@@ -53,10 +53,21 @@ app.post('/api/cache/clear', (_req: Request, res: Response) => {
   res.json({ message: 'Cache cleared successfully' });
 });
 
+// Delete cache for specific video
+app.delete('/api/cache/:videoId', (req: Request, res: Response) => {
+  const { videoId } = req.params;
+  const { language = 'pt' } = req.query;
+  const deleted = deleteCacheForVideo(videoId, language as string);
+  res.json({ 
+    message: deleted ? 'Cache deleted successfully' : 'Cache not found',
+    deleted 
+  });
+});
+
 // Main endpoint to generate timestamps
 app.post('/api/generate', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { url, language = 'pt', min_segment_duration = 30 } = req.body as VideoRequest;
+    const { url, language = 'pt', min_segment_duration = 30, force_whisper } = req.body as VideoRequest;
 
     // Validate request
     if (!url) {
@@ -82,7 +93,7 @@ app.post('/api/generate', async (req: Request, res: Response, next: NextFunction
     }
 
     // Get transcript (with Whisper fallback if no subtitles)
-    const { transcript, fromCache } = await getTranscript(videoId, language, true, apiKey);
+    const { transcript, fromCache } = await getTranscript(videoId, language, true, apiKey, force_whisper);
 
     // Generate timestamps with AI
     const aiResult = await generateTimestampsWithAI(

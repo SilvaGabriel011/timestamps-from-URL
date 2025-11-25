@@ -96,6 +96,26 @@ export function cacheTranscript(
 }
 
 /**
+ * Delete cache for specific video
+ */
+export function deleteCacheForVideo(videoId: string, language: string): boolean {
+  const cacheKey = getCacheKey(videoId, language);
+  const cachePath = path.join(CACHE_DIR, cacheKey);
+
+  try {
+    if (fs.existsSync(cachePath)) {
+      fs.unlinkSync(cachePath);
+      console.log(`[Cache] Deleted cache for video ${videoId}`);
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error(`[Cache] Error deleting cache for ${videoId}:`, error);
+    return false;
+  }
+}
+
+/**
  * Clear old cache entries
  */
 export function clearOldCache(): void {

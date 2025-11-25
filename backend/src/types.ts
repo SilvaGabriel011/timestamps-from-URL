@@ -37,4 +37,5 @@ export interface VideoRequest {
   url: string;
   language?: string;
   min_segment_duration?: number;
+  force_whisper?: boolean;
 }
