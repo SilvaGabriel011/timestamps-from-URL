@@ -55,10 +55,14 @@ async function getVideoInfo(videoId: string): Promise<any> {
 /**
  * Download audio from YouTube video using yt-dlp
  * Returns path to downloaded audio file
+ * @param videoId - YouTube video ID
+ * @param maxDuration - Maximum video duration in seconds (default: 3 hours)
+ * @param allowLargeForChunking - If true, skip the 25MB size check (for chunked transcription)
  */
 export async function downloadYouTubeAudio(
   videoId: string,
-  maxDuration: number = 10800 // Max 3 hours by default
+  maxDuration: number = 10800, // Max 3 hours by default
+  allowLargeForChunking: boolean = false
 ): Promise<string> {
   const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
   const outputPath = path.join(TEMP_DIR, `${videoId}_${Date.now()}.mp3`);
@@ -142,7 +146,8 @@ export async function downloadYouTubeAudio(
     const stats = fs.statSync(outputPath);
     console.log(`[Audio-ytdlp] Downloaded ${Math.round(stats.size / 1024 / 1024 * 10) / 10}MB audio file`);
 
-    if (stats.size > MAX_AUDIO_SIZE) {
+    // Only check size limit if not allowing large files for chunking
+    if (!allowLargeForChunking && stats.size > MAX_AUDIO_SIZE) {
       fs.unlinkSync(outputPath);
       throw new AppError({
         code: 'AUDIO_TOO_LARGE' as any,
@@ -154,6 +159,10 @@ export async function downloadYouTubeAudio(
         ],
         httpStatus: 413,
       });
+    }
+
+    if (allowLargeForChunking && stats.size > MAX_AUDIO_SIZE) {
+      console.log(`[Audio-ytdlp] Large file allowed for chunking (${Math.round(stats.size / 1024 / 1024 * 10) / 10}MB > 25MB)`);
     }
 
     return outputPath;
