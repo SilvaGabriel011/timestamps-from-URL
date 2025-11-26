@@ -43,6 +43,13 @@ export const VALIDATION_CONFIG = {
    * Used when transcript segments don't have proper duration information.
    */
   FALLBACK_SECONDS_PER_SEGMENT: 10,
+
+  /**
+   * Minimum transcript coverage ratio (0.0 to 1.0) required before falling back to Whisper.
+   * If transcript_duration / video_duration < this threshold, Whisper will be used instead.
+   * Default: 0.8 (80% coverage required)
+   */
+  TRANSCRIPT_COVERAGE_THRESHOLD: 0.8,
 } as const;
 
 /**
