@@ -1,12 +1,12 @@
 # YouTube Timestamp Generator
 
-Generate automatic timestamps for YouTube videos using AI. This application extracts video transcripts and uses OpenAI GPT-4o-mini to identify topic changes, producing timestamps that can be copied directly to YouTube video descriptions.
+Generate automatic timestamps for YouTube videos using AI. This application extracts video transcripts and uses AI to identify topic changes, producing timestamps that can be copied directly to YouTube video descriptions.
 
 ## Features
 
 - Extract transcripts from YouTube videos (supports manual and auto-generated captions)
-- **NEW:** Automatic Speech-to-Text when no subtitles are available (using OpenAI Whisper)
-- **NEW:** Smart caching system to reduce API calls and improve performance
+- Automatic Speech-to-Text when no subtitles are available
+- Smart caching system to reduce processing time
 - AI-powered topic change detection with anti-hallucination validation
 - Multi-language support (Portuguese, English, Spanish)
 - Configurable minimum segment duration
@@ -14,6 +14,13 @@ Generate automatic timestamps for YouTube videos using AI. This application extr
 - Confidence scores and evidence for each timestamp
 - Visual indicators for transcription source (subtitles vs speech-to-text)
 - Cache hit indicator showing when results are served from cache
+
+## Two Modes of Operation
+
+This application supports two modes:
+
+1. **Local Mode (FREE)** - Uses local AI models (Ollama + faster-whisper). No API keys required!
+2. **Cloud Mode** - Uses OpenAI APIs (GPT-4o-mini + Whisper). Requires OpenAI API key.
 
 ## Tech Stack
 
@@ -23,7 +30,8 @@ Generate automatic timestamps for YouTube videos using AI. This application extr
 - Express.js
 - youtube-transcript
 - @distube/ytdl-core (for audio download)
-- OpenAI API (GPT-4o-mini + Whisper)
+- **Local Mode:** Ollama (local LLM) + faster-whisper (local speech-to-text)
+- **Cloud Mode:** OpenAI API (GPT-4o-mini + Whisper)
 
 ### Frontend
 
@@ -36,8 +44,76 @@ Generate automatic timestamps for YouTube videos using AI. This application extr
 
 ### Prerequisites
 
+**For Local Mode (FREE - No API keys required):**
+- Node.js 18+
+- Python 3.9+
+- Ollama (for local LLM)
+- FFmpeg (for audio processing)
+- 8GB+ RAM recommended
+
+**For Cloud Mode:**
 - Node.js 18+
 - OpenAI API key
+
+---
+
+## Local Mode Setup (FREE)
+
+### 1. Install Ollama
+
+```bash
+# Linux/macOS
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Start Ollama and pull a model
+ollama serve
+ollama pull llama3.2
+```
+
+### 2. Install Local Whisper Server
+
+```bash
+cd backend/local-whisper
+pip install -r requirements.txt
+```
+
+### 3. Start Local Services
+
+**Terminal 1 - Whisper Server:**
+```bash
+cd backend/local-whisper
+python server.py --model base --port 5000
+```
+
+**Terminal 2 - Backend Server:**
+```bash
+cd backend
+npm install
+npm run dev:local
+```
+
+**Terminal 3 - Frontend:**
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The app will be available at `http://localhost:5173`.
+
+### Whisper Model Options
+
+| Model | Size | RAM | Speed | Quality |
+|-------|------|-----|-------|---------|
+| tiny | 39M | ~1GB | Fastest | Basic |
+| base | 74M | ~1GB | Fast | Good |
+| small | 244M | ~2GB | Medium | Better |
+| medium | 769M | ~5GB | Slow | Great |
+| large-v3 | 1550M | ~10GB | Slowest | Best |
+
+---
+
+## Cloud Mode Setup (OpenAI API)
 
 ### Backend Setup
 

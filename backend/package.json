@@ -2,12 +2,14 @@
   "name": "youtube-timestamp-generator-backend",
   "version": "1.0.0",
   "main": "dist/index.js",
-  "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "lint": "tsc --noEmit"
-  },
+    "scripts": {
+      "dev": "tsx watch src/index.ts",
+      "dev:local": "tsx watch src/index-local.ts",
+      "build": "tsc",
+      "start": "node dist/index.js",
+      "start:local": "node dist/index-local.js",
+      "lint": "tsc --noEmit"
+    },
   "keywords": [
     "youtube",
     "timestamp",
