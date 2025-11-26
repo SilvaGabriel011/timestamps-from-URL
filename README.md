@@ -1,276 +1,187 @@
 # YouTube Timestamp Generator
 
-Generate automatic timestamps for YouTube videos using AI. This application extracts video transcripts and uses AI to identify topic changes, producing timestamps that can be copied directly to YouTube video descriptions.
+A simple, local-only CLI application that generates video transcripts and timestamps from YouTube URLs. The entire process runs locally without any paid APIs or cloud services.
 
 ## Features
 
-- Extract transcripts from YouTube videos (supports manual and auto-generated captions)
-- Automatic Speech-to-Text when no subtitles are available
-- Smart caching system to reduce processing time
-- AI-powered topic change detection with anti-hallucination validation
-- Multi-language support (Portuguese, English, Spanish)
-- Configurable minimum segment duration
-- Copy-to-clipboard functionality for YouTube descriptions
-- Confidence scores and evidence for each timestamp
-- Visual indicators for transcription source (subtitles vs speech-to-text)
-- Cache hit indicator showing when results are served from cache
+- Downloads audio from YouTube videos
+- Transcribes audio using local Whisper model (faster-whisper)
+- Generates timestamps using local LLM (Ollama)
+- Outputs transcript and timestamps to local files
+- 100% free, no API keys required
 
-## Two Modes of Operation
+## Requirements
 
-This application supports two modes:
+- Python 3.10+
+- [Ollama](https://ollama.com/) (local LLM runtime)
+- FFmpeg (usually pre-installed on most systems)
 
-1. **Local Mode (FREE)** - Uses local AI models (Ollama + faster-whisper). No API keys required!
-2. **Cloud Mode** - Uses OpenAI APIs (GPT-4o-mini + Whisper). Requires OpenAI API key.
+## Installation
 
-## Tech Stack
-
-### Backend
-
-- Node.js 18+ with TypeScript
-- Express.js
-- youtube-transcript
-- @distube/ytdl-core (for audio download)
-- **Local Mode:** Ollama (local LLM) + faster-whisper (local speech-to-text)
-- **Cloud Mode:** OpenAI API (GPT-4o-mini + Whisper)
-
-### Frontend
-
-- React 18 + TypeScript
-- Vite
-- Tailwind CSS
-- shadcn/ui components
-
-## Getting Started
-
-### Prerequisites
-
-**For Local Mode (FREE - No API keys required):**
-- Node.js 18+
-- Python 3.9+
-- Ollama (for local LLM)
-- FFmpeg (for audio processing)
-- 8GB+ RAM recommended
-
-**For Cloud Mode:**
-- Node.js 18+
-- OpenAI API key
-
----
-
-## Local Mode Setup (FREE)
-
-### 1. Install Ollama
+### 1. Clone the repository
 
 ```bash
-# Linux/macOS
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Start Ollama and pull a model
-ollama serve
-ollama pull llama3.2
+git clone https://github.com/SilvaGabriel011/timestamps-from-URL.git
+cd timestamps-from-URL
 ```
 
-### 2. Install Local Whisper Server
+### 2. Install Python dependencies
 
 ```bash
-cd backend/local-whisper
 pip install -r requirements.txt
 ```
 
-### 3. Start Local Services
+### 3. Install and setup Ollama
 
-**Terminal 1 - Whisper Server:**
 ```bash
-cd backend/local-whisper
-python server.py --model base --port 5000
+# Install Ollama (Linux/macOS)
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Start Ollama service
+ollama serve
+
+# Pull a model (in another terminal)
+ollama pull llama3.2
 ```
 
-**Terminal 2 - Backend Server:**
+## Usage
+
+### Basic Usage
+
 ```bash
-cd backend
-npm install
-npm run dev:local
+python main.py "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
-**Terminal 3 - Frontend:**
+### With Options
+
 ```bash
-cd frontend
-npm install
-npm run dev
+python main.py "https://www.youtube.com/watch?v=VIDEO_ID" \
+  --output ./my_output \
+  --model small \
+  --language pt \
+  --min-duration 60
 ```
 
-The app will be available at `http://localhost:5173`.
+### All Options
 
-### Whisper Model Options
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-o, --output` | Output directory | `./output` |
+| `-m, --model` | Whisper model size (tiny, base, small, medium, large-v3) | `base` |
+| `-l, --language` | Preferred language code (en, pt, es, etc.) | auto-detect |
+| `--min-duration` | Minimum seconds between timestamps | `30` |
+| `--ollama-model` | Ollama model for timestamp generation | `llama3.2` |
+| `--ollama-url` | Ollama server URL | `http://localhost:11434` |
+| `--keep-audio` | Keep downloaded audio file | `false` |
+| `--skip-timestamps` | Only generate transcript | `false` |
+| `-q, --quiet` | Suppress progress messages | `false` |
 
-| Model | Size | RAM | Speed | Quality |
-|-------|------|-----|-------|---------|
-| tiny | 39M | ~1GB | Fastest | Basic |
-| base | 74M | ~1GB | Fast | Good |
-| small | 244M | ~2GB | Medium | Better |
-| medium | 769M | ~5GB | Slow | Great |
-| large-v3 | 1550M | ~10GB | Slowest | Best |
+## Output Files
 
----
+After running, the output directory will contain:
 
-## Cloud Mode Setup (OpenAI API)
+```
+output/
+├── VIDEO_ID_transcript.txt    # Full transcript with timestamps
+├── VIDEO_ID_timestamps.txt    # YouTube-ready timestamp list
+└── VIDEO_ID_timestamps.json   # Structured timestamp data
+```
 
-### Backend Setup
+### timestamps.txt (YouTube format)
 
-1. Navigate to the backend directory:
+```
+Timestamps for: Video Title
 
-   ```bash
-   cd backend
-   ```
+TIMESTAMPS (Copy to YouTube description):
+----------------------------------------
+0:00 - Introduction
+0:45 - Main Topic Overview
+2:30 - Deep Dive into Details
+5:15 - Conclusion
+----------------------------------------
+```
 
-2. Install dependencies:
-
-   ```bash
-   npm install
-   ```
-
-3. Create a `.env` file with your OpenAI API key:
-
-   ```bash
-   cp .env.example .env
-   # Edit .env and add your OPENAI_API_KEY
-   ```
-
-4. Start the development server:
-
-   ```bash
-   npm run dev
-   ```
-
-The API will be available at `http://localhost:8000`.
-
-### Frontend Setup
-
-1. Navigate to the frontend directory:
-
-   ```bash
-   cd frontend
-   ```
-
-2. Install dependencies:
-
-   ```bash
-   npm install
-   ```
-
-3. Create a `.env` file:
-
-   ```bash
-   cp .env.example .env
-   ```
-
-4. Start the development server:
-
-   ```bash
-   npm run dev
-   ```
-
-The app will be available at `http://localhost:5173`.
-
-## API Endpoints
-
-### POST /api/generate
-
-Generate timestamps for a YouTube video.
-
-**Request Body:**
+### timestamps.json
 
 ```json
 {
-  "url": "https://www.youtube.com/watch?v=VIDEO_ID",
-  "language": "pt",
-  "min_segment_duration": 30
-}
-```
-
-**Response:**
-
-```json
-{
+  "video_title": "Video Title",
+  "video_id": "VIDEO_ID",
+  "timestamp_count": 4,
   "timestamps": [
-    {
-      "time": 0,
-      "title": "Introdução",
-      "confidence": 0.95,
-      "evidence": "transcript text..."
-    }
-  ],
-  "metadata": {
-    "video_id": "VIDEO_ID",
-    "language": "pt",
-    "is_auto_generated": false,
-    "used_speech_to_text": false,
-    "from_cache": false,
-    "total_candidates": 10,
-    "validated_count": 5
-  }
+    {"time": 0, "formatted": "0:00", "title": "Introduction", "confidence": 1.0},
+    {"time": 45, "formatted": "0:45", "title": "Main Topic Overview", "confidence": 1.0}
+  ]
 }
 ```
 
-### GET /api/health
+## Whisper Model Sizes
 
-Health check endpoint.
+| Model | Size | Speed | Quality | Recommended For |
+|-------|------|-------|---------|-----------------|
+| `tiny` | ~75MB | Fastest | Basic | Quick tests |
+| `base` | ~150MB | Fast | Good | General use |
+| `small` | ~500MB | Medium | Better | Better accuracy |
+| `medium` | ~1.5GB | Slow | Best | High quality |
+| `large-v3` | ~3GB | Slowest | Excellent | Maximum accuracy |
 
-### GET /api/cache/stats
+## Examples
 
-Get cache statistics.
+### Generate timestamps for a podcast
 
-**Response:**
-
-```json
-{
-  "totalEntries": 5,
-  "totalSize": 245632,
-  "oldestEntry": "2024-01-20T10:30:00.000Z",
-  "newestEntry": "2024-01-21T15:45:00.000Z"
-}
+```bash
+python main.py "https://www.youtube.com/watch?v=PODCAST_ID" -m small --min-duration 120
 ```
 
-### POST /api/cache/clear
+### Generate only transcript (no timestamps)
 
-Clear old cache entries.
+```bash
+python main.py "https://www.youtube.com/watch?v=VIDEO_ID" --skip-timestamps
+```
 
-## Speech-to-Text Support
+### Use a different Ollama model
 
-When a video doesn't have available subtitles, the application automatically:
+```bash
+python main.py "https://www.youtube.com/watch?v=VIDEO_ID" --ollama-model mistral
+```
 
-1. Downloads the audio from YouTube (max 1 hour, 25MB limit)
-2. Transcribes using OpenAI Whisper API
-3. Generates timestamps from the transcription
-4. Shows a purple "Speech-to-Text (Whisper)" badge in the UI
+## Troubleshooting
 
-**Limitations:**
+### "Ollama is not running"
 
-- Maximum video duration: 1 hour (configurable)
-- Maximum audio file size: 25MB (Whisper API limit)
-- Temporary audio files are cleaned up automatically
+Start the Ollama service:
+```bash
+ollama serve
+```
 
-## Cache System
+Then pull a model:
+```bash
+ollama pull llama3.2
+```
 
-The application implements a smart caching system to:
+### "No speech detected in audio"
 
-- **Reduce API costs**: Transcripts are cached for 7 days
-- **Improve performance**: Cached results load instantly
-- **Automatic cleanup**: Old cache entries are removed automatically
-- **Visual feedback**: Yellow "Cache Hit" badge when using cached data
+This can happen with:
+- Music videos (mostly singing, not speech)
+- Videos with heavy background noise
+- Very short videos
 
-Cache is stored locally in the `cache/` directory and persists between server restarts.
+Try using a larger Whisper model:
+```bash
+python main.py "URL" -m small
+```
 
-## Anti-Hallucination Strategies
+### "Download failed"
 
-This application implements multiple layers of validation to minimize AI hallucinations:
+Make sure yt-dlp is installed and up to date:
+```bash
+pip install --upgrade yt-dlp
+```
 
-1. **Prompt Engineering**: Explicit instructions to use only transcript content
-2. **Low Temperature**: AI calls use temperature 0.3 for more deterministic outputs
-3. **Confidence Filtering**: Only timestamps with confidence >= 0.7 are included
-4. **Spacing Validation**: Minimum duration between timestamps is enforced
-5. **Evidence Requirement**: Each timestamp includes supporting text from the transcript
+## Architecture
+
+See [docs/architecture.md](docs/architecture.md) for detailed architecture documentation.
 
 ## License
 
-MIT
+MIT License

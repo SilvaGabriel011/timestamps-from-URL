@@ -1,322 +1,314 @@
-# Local YouTube Timestamp Generator - Architecture
+# YouTube Timestamp Generator - Architecture
 
 ## Overview
 
-This document describes the architecture of a fully local, free application that generates video transcripts and timestamps from YouTube URLs. The system runs entirely on the user's machine without relying on any paid APIs or cloud services.
+A simple, local-only CLI application that generates video transcripts and timestamps from YouTube URLs. The entire process runs locally without any paid APIs or cloud services.
 
 ## System Requirements
 
-- **Python 3.9+** - For running the local Whisper model
-- **Node.js 18+** - For the backend API server
-- **Ollama** - For running local LLM models
-- **FFmpeg** - For audio extraction and processing
-- **8GB+ RAM** - Recommended for running local AI models
-- **GPU (optional)** - CUDA-compatible GPU for faster transcription
+- Python 3.10+
+- Ollama (local LLM runtime)
+- FFmpeg (for audio processing)
+- ~4GB RAM minimum (for Whisper base model)
 
 ## Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              User Interface                                  │
-│                         (React + TypeScript + Vite)                         │
-│                                                                             │
-│  ┌─────────────┐  ┌─────────────────┐  ┌─────────────────────────────────┐ │
-│  │ Video Input │  │ Loading States  │  │ Timestamp Display + Copy        │ │
-│  └─────────────┘  └─────────────────┘  └─────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    │ HTTP API
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           Backend API Server                                 │
-│                      (Node.js + Express + TypeScript)                       │
-│                                                                             │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────────┐ │
-│  │ /api/generate   │  │ /api/transcript │  │ /api/health                 │ │
-│  └─────────────────┘  └─────────────────┘  └─────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                    ┌───────────────┼───────────────┐
-                    │               │               │
-                    ▼               ▼               ▼
-┌───────────────────────┐ ┌─────────────────┐ ┌─────────────────────────────┐
-│   YouTube Service     │ │ Local Whisper   │ │ Local LLM (Ollama)          │
-│                       │ │ (Python Server) │ │                             │
-│ - Extract video ID    │ │                 │ │ - Timestamp generation      │
-│ - Get subtitles       │ │ - Audio → Text  │ │ - Topic detection           │
-│ - Download audio      │ │ - Word timing   │ │ - Title generation          │
-└───────────────────────┘ └─────────────────┘ └─────────────────────────────┘
-         │                        │                        │
-         ▼                        ▼                        ▼
-┌───────────────────────┐ ┌─────────────────┐ ┌─────────────────────────────┐
-│   yt-dlp / ytdl-core  │ │ faster-whisper  │ │ Ollama Runtime              │
-│                       │ │ (Whisper model) │ │ (llama3.2, mistral, etc.)   │
-└───────────────────────┘ └─────────────────┘ └─────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                         CLI Interface                            │
+│                          (main.py)                               │
+└─────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                        Downloader Module                         │
+│                       (downloader.py)                            │
+│                                                                  │
+│  - Downloads audio from YouTube URL using yt-dlp                │
+│  - Extracts video metadata (title, duration)                    │
+│  - Saves audio to temporary file                                │
+└─────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                       Transcriber Module                         │
+│                       (transcriber.py)                           │
+│                                                                  │
+│  - Uses faster-whisper library directly (no HTTP server)        │
+│  - Transcribes audio to text with timestamps                    │
+│  - Supports multiple model sizes (tiny, base, small, medium)    │
+│  - Returns structured transcript with word-level timing         │
+└─────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   Timestamp Generator Module                     │
+│                   (timestamp_generator.py)                       │
+│                                                                  │
+│  - Sends transcript to local Ollama LLM                         │
+│  - Prompts LLM to identify topic changes and key moments        │
+│  - Parses LLM response into structured timestamps               │
+│  - Validates timestamps against transcript                      │
+└─────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                        Exporter Module                           │
+│                        (exporter.py)                             │
+│                                                                  │
+│  - Writes transcript to transcript.txt                          │
+│  - Writes timestamps to timestamps.txt (YouTube format)         │
+│  - Writes timestamps to timestamps.json (structured data)       │
+│  - Creates output directory if needed                           │
+└─────────────────────────────────────────────────────────────────┘
 ```
-
-## Components
-
-### 1. Frontend (React + TypeScript)
-
-The frontend provides a user-friendly interface for:
-- Entering YouTube video URLs
-- Configuring generation options (language, minimum segment duration)
-- Displaying generated timestamps with confidence scores
-- Copying timestamps to clipboard for YouTube descriptions
-
-**Key Files:**
-- `frontend/src/App.tsx` - Main application component
-- `frontend/src/components/VideoInput.tsx` - URL input form
-- `frontend/src/components/TimestampList.tsx` - Results display
-- `frontend/src/services/api.ts` - Backend API client
-
-### 2. Backend API Server (Node.js + Express)
-
-The backend orchestrates the entire pipeline:
-1. Receives YouTube URL from frontend
-2. Extracts video ID and fetches metadata
-3. Attempts to get existing subtitles from YouTube
-4. Falls back to local Whisper transcription if no subtitles
-5. Sends transcript to local LLM for timestamp generation
-6. Validates and returns timestamps
-
-**Key Files:**
-- `backend/src/index.ts` - Express server and API routes
-- `backend/src/youtube.ts` - YouTube video handling
-- `backend/src/local-whisper.ts` - Local Whisper integration
-- `backend/src/local-llm.ts` - Ollama LLM integration
-- `backend/src/validator.ts` - Timestamp validation
-
-### 3. Local Whisper Service (Python + faster-whisper)
-
-A lightweight Python HTTP server that provides speech-to-text transcription using the faster-whisper library, which is a highly optimized implementation of OpenAI's Whisper model.
-
-**Features:**
-- Runs completely locally without internet
-- Supports multiple model sizes (tiny, base, small, medium, large)
-- Provides word-level timestamps
-- GPU acceleration with CUDA (optional)
-- CPU fallback for systems without GPU
-
-**Key Files:**
-- `backend/local-whisper/server.py` - HTTP server for transcription
-- `backend/local-whisper/requirements.txt` - Python dependencies
-
-### 4. Local LLM Service (Ollama)
-
-Ollama provides a simple way to run large language models locally. The application uses Ollama to analyze transcripts and generate meaningful timestamps.
-
-**Supported Models:**
-- `llama3.2` (recommended) - Good balance of speed and quality
-- `mistral` - Fast and efficient
-- `llama3.1` - Higher quality, slower
-- `phi3` - Lightweight option
 
 ## Data Flow
 
-### Transcript Generation Flow
+1. **Input**: User provides YouTube URL via command line
+2. **Download**: yt-dlp extracts audio from video
+3. **Transcribe**: faster-whisper converts audio to text with timing
+4. **Generate**: Ollama LLM analyzes transcript and identifies key moments
+5. **Export**: Results saved to local files
 
-```
-1. User enters YouTube URL
-                │
-                ▼
-2. Backend extracts video ID
-                │
-                ▼
-3. Try to fetch YouTube subtitles
-                │
-        ┌───────┴───────┐
-        │               │
-   Subtitles       No Subtitles
-   Available       Available
-        │               │
-        ▼               ▼
-4a. Parse and      4b. Download audio
-    format             with yt-dlp
-    subtitles              │
-        │                  ▼
-        │          5b. Send to local
-        │              Whisper server
-        │                  │
-        │                  ▼
-        │          6b. Receive transcript
-        │              with timestamps
-        │               │
-        └───────┬───────┘
-                │
-                ▼
-7. Send transcript to Ollama LLM
-                │
-                ▼
-8. LLM identifies topic changes
-   and generates timestamps
-                │
-                ▼
-9. Validate timestamps
-   (confidence, spacing, bounds)
-                │
-                ▼
-10. Return to frontend
+## Module Details
+
+### 1. Downloader (`src/downloader.py`)
+
+**Purpose**: Download audio from YouTube videos
+
+**Dependencies**: yt-dlp
+
+**Functions**:
+- `download_audio(url: str, output_dir: str) -> AudioInfo`
+- `get_video_info(url: str) -> VideoInfo`
+
+**Data Structures**:
+```python
+@dataclass
+class VideoInfo:
+    video_id: str
+    title: str
+    duration: int  # seconds
+    
+@dataclass
+class AudioInfo:
+    video_info: VideoInfo
+    audio_path: str
 ```
 
-### Timestamp Generation Prompt
+### 2. Transcriber (`src/transcriber.py`)
 
-The LLM receives a carefully crafted prompt that:
-1. Provides the full transcript with timing information
-2. Instructs the model to identify topic changes
-3. Requires evidence from the transcript for each timestamp
-4. Enforces minimum spacing between timestamps
-5. Requests confidence scores for each suggestion
+**Purpose**: Convert audio to text using local Whisper model
 
-## API Endpoints
+**Dependencies**: faster-whisper
 
-### POST /api/generate
+**Functions**:
+- `transcribe(audio_path: str, model_size: str, language: str) -> Transcript`
 
-Generate timestamps for a YouTube video.
+**Data Structures**:
+```python
+@dataclass
+class TranscriptSegment:
+    start: float  # seconds
+    end: float    # seconds
+    text: str
 
-**Request:**
+@dataclass
+class Transcript:
+    language: str
+    segments: List[TranscriptSegment]
+    full_text: str
+```
+
+**Model Options**:
+| Model | Size | Speed | Quality |
+|-------|------|-------|---------|
+| tiny | ~75MB | Fastest | Basic |
+| base | ~150MB | Fast | Good |
+| small | ~500MB | Medium | Better |
+| medium | ~1.5GB | Slow | Best |
+
+### 3. Timestamp Generator (`src/timestamp_generator.py`)
+
+**Purpose**: Analyze transcript and generate timestamps using local LLM
+
+**Dependencies**: requests (for Ollama API)
+
+**Functions**:
+- `generate_timestamps(transcript: Transcript, video_title: str, min_duration: int) -> List[Timestamp]`
+
+**Data Structures**:
+```python
+@dataclass
+class Timestamp:
+    time: float      # seconds
+    title: str       # short description (3-8 words)
+    confidence: float
+```
+
+**Ollama Integration**:
+- Endpoint: `http://localhost:11434/api/generate`
+- Default model: `llama3.2`
+- Temperature: 0.3 (for consistent output)
+
+### 4. Exporter (`src/exporter.py`)
+
+**Purpose**: Save results to local files
+
+**Functions**:
+- `export_transcript(transcript: Transcript, output_path: str)`
+- `export_timestamps_txt(timestamps: List[Timestamp], output_path: str)`
+- `export_timestamps_json(timestamps: List[Timestamp], output_path: str)`
+
+**Output Formats**:
+
+**transcript.txt**:
+```
+[Full transcript text with timestamps]
+
+[00:00] Hello and welcome to this video...
+[00:15] Today we're going to talk about...
+```
+
+**timestamps.txt** (YouTube format):
+```
+0:00 - Introduction
+0:45 - Main Topic Overview
+2:30 - Deep Dive into Details
+5:15 - Conclusion
+```
+
+**timestamps.json**:
 ```json
 {
-  "url": "https://www.youtube.com/watch?v=VIDEO_ID",
-  "language": "en",
-  "min_segment_duration": 30
-}
-```
-
-**Response:**
-```json
-{
+  "video_title": "Example Video",
   "timestamps": [
-    {
-      "time": 0,
-      "title": "Introduction",
-      "confidence": 0.95,
-      "evidence": "Welcome to this video about..."
-    },
-    {
-      "time": 180,
-      "title": "Main Topic Discussion",
-      "confidence": 0.88,
-      "evidence": "Now let's dive into the main topic..."
-    }
-  ],
-  "metadata": {
-    "video_id": "VIDEO_ID",
-    "language": "en",
-    "is_auto_generated": false,
-    "used_speech_to_text": true,
-    "from_cache": false,
-    "total_candidates": 10,
-    "validated_count": 5,
-    "model_used": "llama3.2"
-  }
+    {"time": 0, "formatted": "0:00", "title": "Introduction"},
+    {"time": 45, "formatted": "0:45", "title": "Main Topic Overview"}
+  ]
 }
 ```
 
-### POST /api/transcript
+### 5. Main CLI (`main.py`)
 
-Get only the transcript without timestamp generation.
+**Purpose**: Command-line interface and orchestration
 
-### GET /api/health
-
-Health check endpoint that also verifies local services are running.
-
-## Local Services Setup
-
-### Whisper Server (Python)
-
+**Usage**:
 ```bash
-cd backend/local-whisper
-pip install -r requirements.txt
-python server.py --model base --port 5000
+python main.py <youtube_url> [options]
+
+Options:
+  --output, -o      Output directory (default: ./output)
+  --model, -m       Whisper model size (default: base)
+  --language, -l    Preferred language (default: auto)
+  --min-duration    Minimum seconds between timestamps (default: 30)
+  --ollama-model    Ollama model to use (default: llama3.2)
 ```
 
-**Model Options:**
-| Model  | Size   | RAM Required | Speed    | Quality  |
-|--------|--------|--------------|----------|----------|
-| tiny   | 39M    | ~1GB         | Fastest  | Basic    |
-| base   | 74M    | ~1GB         | Fast     | Good     |
-| small  | 244M   | ~2GB         | Medium   | Better   |
-| medium | 769M   | ~5GB         | Slow     | Great    |
-| large  | 1550M  | ~10GB        | Slowest  | Best     |
-
-### Ollama Setup
-
+**Example**:
 ```bash
-# Install Ollama
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Pull a model
-ollama pull llama3.2
-
-# Start Ollama server (usually auto-starts)
-ollama serve
+python main.py "https://www.youtube.com/watch?v=VIDEO_ID" -o ./my_output -m small
 ```
 
 ## Configuration
 
-### Environment Variables
+### Environment Variables (optional)
 
-**Backend (.env):**
-```env
-PORT=8000
-WHISPER_SERVER_URL=http://localhost:5000
-OLLAMA_URL=http://localhost:11434
-OLLAMA_MODEL=llama3.2
+```bash
+OLLAMA_URL=http://localhost:11434    # Ollama server URL
+OLLAMA_MODEL=llama3.2                # Default LLM model
+WHISPER_MODEL=base                   # Default Whisper model
 ```
 
-**Frontend (.env):**
-```env
-VITE_API_URL=http://localhost:8000
-```
+### Default Settings
 
-## Anti-Hallucination Strategies
-
-The system implements multiple layers to prevent AI hallucinations:
-
-1. **Prompt Engineering** - Explicit instructions to use only transcript content
-2. **Low Temperature** - LLM calls use temperature 0.3 for deterministic outputs
-3. **Confidence Filtering** - Only timestamps with confidence >= 0.7 are included
-4. **Spacing Validation** - Minimum duration between timestamps is enforced
-5. **Evidence Requirement** - Each timestamp must include supporting transcript text
-6. **Bounds Checking** - Timestamps must be within video duration
-
-## Performance Considerations
-
-### Transcription Performance
-
-- **GPU (CUDA)**: ~10x faster than CPU
-- **CPU**: Adequate for videos under 30 minutes
-- **Model Size**: Smaller models are faster but less accurate
-
-### LLM Performance
-
-- **Model Size**: Larger models produce better timestamps but are slower
-- **Context Length**: Long videos may need transcript sampling
-- **Batch Processing**: Multiple timestamp candidates generated in one call
+- Whisper model: `base` (good balance of speed and quality)
+- Ollama model: `llama3.2` (good for text analysis)
+- Minimum timestamp duration: 30 seconds
+- Output directory: `./output`
 
 ## Error Handling
 
-The system handles various error scenarios:
+The application handles common errors gracefully:
 
-1. **Invalid YouTube URL** - Returns user-friendly error message
-2. **No Subtitles Available** - Falls back to Whisper transcription
-3. **Whisper Server Unavailable** - Returns error with setup instructions
-4. **Ollama Not Running** - Returns error with installation guide
-5. **Video Too Long** - Warns user and samples transcript
-6. **Network Errors** - Retries with exponential backoff
+1. **Invalid YouTube URL**: Clear error message with URL format examples
+2. **Ollama not running**: Instructions to start Ollama service
+3. **Model not available**: Instructions to pull the required model
+4. **Network errors**: Retry logic with exponential backoff
+5. **Audio extraction failures**: Fallback to different formats
 
-## Security Considerations
+## Dependencies
 
-- All processing happens locally - no data sent to external services
-- No API keys required
-- Audio files are deleted after transcription
-- Cache can be cleared by user
+```
+faster-whisper>=1.0.0
+yt-dlp>=2024.0.0
+requests>=2.31.0
+```
+
+## Installation
+
+```bash
+# Clone repository
+git clone https://github.com/SilvaGabriel011/timestamps-from-URL.git
+cd timestamps-from-URL
+
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Install Ollama (if not already installed)
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Pull LLM model
+ollama pull llama3.2
+```
+
+## Usage Examples
+
+### Basic Usage
+```bash
+python main.py "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+```
+
+### With Custom Options
+```bash
+python main.py "https://www.youtube.com/watch?v=VIDEO_ID" \
+  --output ./my_videos \
+  --model small \
+  --language pt \
+  --min-duration 60
+```
+
+### Output Files
+After running, the output directory will contain:
+```
+output/
+├── VIDEO_ID_transcript.txt
+├── VIDEO_ID_timestamps.txt
+└── VIDEO_ID_timestamps.json
+```
+
+## Limitations
+
+1. **Whisper Model Size**: Smaller models (tiny, base) may struggle with:
+   - Music-heavy content
+   - Multiple speakers
+   - Heavy accents
+   - Background noise
+
+2. **LLM Quality**: Timestamp quality depends on:
+   - Ollama model capabilities
+   - Transcript quality
+   - Video content structure
+
+3. **Processing Time**: Depends on:
+   - Video length
+   - Whisper model size
+   - Hardware (CPU vs GPU)
 
 ## Future Improvements
 
-1. **Streaming Transcription** - Real-time progress updates
-2. **Multiple Language Support** - Auto-detect video language
-3. **Custom Model Support** - Allow users to specify Whisper/LLM models
-4. **Batch Processing** - Process multiple videos at once
-5. **Export Formats** - SRT, VTT, JSON export options
+- GPU acceleration for faster transcription
+- Support for other video platforms
+- Batch processing multiple videos
+- Custom prompt templates for different content types
