@@ -8,12 +8,15 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Copy, Check, Clock, Info, Mic, Zap } from 'lucide-react';
+import { Copy, Check, Clock, Info, Mic, Zap, Download, Loader2 } from 'lucide-react';
 import type { Timestamp, GenerationMetadata } from '../types';
+import { fetchTranscript } from '../services/api';
 
 interface TimestampListProps {
   timestamps: Timestamp[];
   metadata: GenerationMetadata | null;
+  videoUrl?: string;
+  language?: string;
 }
 
 /**
@@ -51,8 +54,9 @@ function getConfidenceColor(confidence: number): string {
   return 'bg-red-500';
 }
 
-export function TimestampList({ timestamps, metadata }: TimestampListProps) {
+export function TimestampList({ timestamps, metadata, videoUrl, language }: TimestampListProps) {
   const [copied, setCopied] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   const formatForYouTube = (): string => {
     return timestamps
@@ -60,14 +64,53 @@ export function TimestampList({ timestamps, metadata }: TimestampListProps) {
       .join('\n');
   };
 
-  const handleCopy = async () => {
-    const text = formatForYouTube();
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+    const handleCopy = async () => {
+      const text = formatForYouTube();
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    };
 
-  return (
+    const handleDownloadTranscript = async () => {
+      if (!videoUrl) return;
+    
+      setDownloading(true);
+      try {
+        const result = await fetchTranscript(videoUrl, { language });
+      
+        // Format transcript as text with timestamps
+        const transcriptText = result.transcript.segments
+          .map((seg) => `[${formatTime(seg.offset)}] ${seg.text}`)
+          .join('\n');
+      
+        const fullText = `Video: ${result.transcript.video_title || result.transcript.video_id}
+  Language: ${result.transcript.language}
+  Duration: ${result.metadata.video_duration ? formatTime(result.metadata.video_duration) : 'Unknown'}
+  Segments: ${result.metadata.total_segments}
+
+  --- TRANSCRIPT ---
+
+  ${transcriptText}`;
+
+        // Create and download file
+        const blob = new Blob([fullText], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `transcript-${result.transcript.video_id}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        console.error('Failed to download transcript:', error);
+        alert('Erro ao baixar transcrição. Tente novamente.');
+      } finally {
+        setDownloading(false);
+      }
+    };
+
+    return (
     <Card className="bg-slate-800/50 border-slate-700 mt-6">
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
@@ -115,24 +158,46 @@ export function TimestampList({ timestamps, metadata }: TimestampListProps) {
             </div>
           )}
         </div>
-        <Button
-          onClick={handleCopy}
-          variant="outline"
-          className="border-slate-600 text-slate-300 hover:bg-slate-700"
-        >
-          {copied ? (
-            <>
-              <Check className="mr-2 h-4 w-4 text-green-400" />
-              Copiado!
-            </>
-          ) : (
-            <>
-              <Copy className="mr-2 h-4 w-4" />
-              Copiar para YouTube
-            </>
-          )}
-        </Button>
-      </CardHeader>
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleCopy}
+                  variant="outline"
+                  className="border-slate-600 text-slate-300 hover:bg-slate-700"
+                >
+                  {copied ? (
+                    <>
+                      <Check className="mr-2 h-4 w-4 text-green-400" />
+                      Copiado!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="mr-2 h-4 w-4" />
+                      Copiar para YouTube
+                    </>
+                  )}
+                </Button>
+                {videoUrl && (
+                  <Button
+                    onClick={handleDownloadTranscript}
+                    variant="outline"
+                    className="border-slate-600 text-slate-300 hover:bg-slate-700"
+                    disabled={downloading}
+                  >
+                    {downloading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Baixando...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="mr-2 h-4 w-4" />
+                        Baixar Transcrição
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
       <CardContent>
         <div className="space-y-2">
           {timestamps.map((timestamp, index) => (
