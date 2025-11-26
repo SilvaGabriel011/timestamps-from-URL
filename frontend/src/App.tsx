@@ -70,9 +70,14 @@ function App() {
 
           {loading && <LoadingState />}
           {error && <ErrorDisplay error={error} onRetry={handleRetry} />}
-          {timestamps.length > 0 && (
-            <TimestampList timestamps={timestamps} metadata={metadata} />
-          )}
+                    {timestamps.length > 0 && (
+                      <TimestampList 
+                        timestamps={timestamps} 
+                        metadata={metadata} 
+                        videoUrl={lastUrl}
+                        language={lastOptions.language}
+                      />
+                    )}
         </div>
 
         <footer className="text-center mt-12 text-slate-500 text-sm">
