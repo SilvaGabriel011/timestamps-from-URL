@@ -93,6 +93,12 @@ export async function getTranscript(
     });
     console.log(`[YouTube] Found ${transcriptItems.length} subtitle segments`);
 
+    // Treat empty transcript as failure - trigger fallback
+    if (!transcriptItems || transcriptItems.length === 0) {
+      console.log(`[YouTube] No subtitle segments found for ${videoId} in ${preferredLanguage}, treating as no subtitles`);
+      throw new Error('NO_SUBTITLE_SEGMENTS');
+    }
+
     const segments: TranscriptSegment[] = transcriptItems.map((item) => ({
       text: item.text,
       offset: msToSeconds(item.offset),
@@ -119,6 +125,12 @@ export async function getTranscript(
           lang: 'en',
         });
         console.log(`[YouTube] Found ${transcriptItems.length} English subtitle segments`);
+
+        // Treat empty transcript as failure - trigger fallback
+        if (!transcriptItems || transcriptItems.length === 0) {
+          console.log(`[YouTube] No English subtitle segments found for ${videoId}, treating as no subtitles`);
+          throw new Error('NO_SUBTITLE_SEGMENTS');
+        }
 
         const segments: TranscriptSegment[] = transcriptItems.map((item) => ({
           text: item.text,
@@ -147,6 +159,12 @@ export async function getTranscript(
       console.log(`[YouTube] Trying auto-detect subtitles for ${videoId}...`);
       const transcriptItems = await YoutubeTranscript.fetchTranscript(videoId);
       console.log(`[YouTube] Found ${transcriptItems.length} auto-detected subtitle segments`);
+
+      // Treat empty transcript as failure - trigger Whisper fallback
+      if (!transcriptItems || transcriptItems.length === 0) {
+        console.log(`[YouTube] No auto-detected subtitle segments found for ${videoId}, treating as no subtitles`);
+        throw new Error('NO_SUBTITLE_SEGMENTS');
+      }
 
       const segments: TranscriptSegment[] = transcriptItems.map((item) => ({
         text: item.text,
