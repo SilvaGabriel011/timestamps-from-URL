@@ -1,0 +1,10 @@
+# YouTube Timestamp Generator - Dependencies
+
+# Audio transcription with local Whisper
+faster-whisper>=1.0.0
+
+# YouTube audio download
+yt-dlp>=2024.0.0
+
+# HTTP requests for Ollama API
+requests>=2.31.0

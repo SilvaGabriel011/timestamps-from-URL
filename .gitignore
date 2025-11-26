@@ -53,3 +53,6 @@ temp/
 
 # Cache files
 cache/
+
+# Output files
+output/
