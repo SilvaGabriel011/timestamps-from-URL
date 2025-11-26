@@ -2,6 +2,9 @@ import OpenAI from 'openai';
 import type { Transcript, TimestampCandidate, TranscriptSegment } from './types';
 import { formatTranscriptForAI } from './youtube';
 import { parseOpenAIError } from './errors';
+import { calculateTotalDuration, SECONDS_PER_MINUTE } from './time-utils';
+import { VALIDATION_CONFIG } from './validation-config';
+import { validateAIResponse, normalizeTimestamps, logValidationResult } from './ai-response-validator';
 
 // Maximum transcript length in characters (~100k tokens for GPT-4o-mini)
 // 1 token ≈ 4 characters, so 100k tokens ≈ 400k characters
@@ -90,11 +93,8 @@ export async function generateTimestampsWithAI(
   console.log(`[OpenAI] Transcript text length: ${transcriptText.length} characters`);
   console.log(`[OpenAI] First 500 chars:`, transcriptText.substring(0, 500));
 
-  // Calculate total duration
-  const lastSegment = transcript.segments[transcript.segments.length - 1];
-  const totalDuration = lastSegment
-    ? lastSegment.offset + lastSegment.duration
-    : 0;
+  // Calculate total duration using centralized utility
+  const totalDuration = calculateTotalDuration(transcript.segments);
 
   // Create user prompt
   const samplingNote = isSampled 
@@ -102,7 +102,7 @@ export async function generateTimestampsWithAI(
     : '';
 
   // Calculate recommended number of timestamps
-  const durationMinutes = Math.floor(totalDuration / 60);
+  const durationMinutes = Math.floor(totalDuration / SECONDS_PER_MINUTE);
   let recommendedTimestamps = 0;
   if (durationMinutes >= 40) {
     recommendedTimestamps = Math.min(20, Math.max(12, Math.floor(durationMinutes / 2.5)));
@@ -150,18 +150,32 @@ INSTRUÇÕES OBRIGATÓRIAS:
     });
     console.log(`[OpenAI] Received response from GPT-4o-mini`);
 
-    // Parse response
+    // Parse and validate response using AI response validator
     const content = response.choices[0]?.message?.content;
     if (!content) {
       throw new Error('Resposta vazia da IA');
     }
 
-    const result = JSON.parse(content) as { timestamps: TimestampCandidate[] };
-    console.log(`[OpenAI] Generated ${result.timestamps?.length || 0} timestamp candidates`);
-    if (result.timestamps && result.timestamps.length > 0) {
-      console.log(`[OpenAI] First timestamp:`, result.timestamps[0]);
+    // Validate AI response structure and normalize timestamps
+    const validationResult = validateAIResponse(content);
+    logValidationResult(validationResult);
+
+    if (!validationResult.success) {
+      console.error('[OpenAI] AI response validation failed');
+      return { timestamps: [] };
     }
-    return result;
+
+    // Normalize timestamps (clamp to valid range, sort by time)
+    const normalizedTimestamps = normalizeTimestamps(
+      validationResult.timestamps,
+      totalDuration * VALIDATION_CONFIG.DURATION_TOLERANCE_FACTOR
+    );
+
+    console.log(`[OpenAI] Generated ${normalizedTimestamps.length} timestamp candidates`);
+    if (normalizedTimestamps.length > 0) {
+      console.log(`[OpenAI] First timestamp:`, normalizedTimestamps[0]);
+    }
+    return { timestamps: normalizedTimestamps };
   } catch (error: any) {
     // Parse and throw specific OpenAI errors
     throw parseOpenAIError(error);

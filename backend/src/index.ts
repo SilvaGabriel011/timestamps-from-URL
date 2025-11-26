@@ -11,6 +11,7 @@ import {
   createInvalidVideoIdError, 
   createMissingAPIKeyError 
 } from './errors';
+import { VALIDATION_CONFIG } from './validation-config';
 
 // Load environment variables
 dotenv.config();
@@ -103,11 +104,11 @@ app.post('/api/generate', async (req: Request, res: Response, next: NextFunction
       videoTitle
     );
 
-    // Validate timestamps
+    // Validate timestamps using centralized config
     const validated = validateTimestamps(
       aiResult.timestamps || [],
       transcript,
-      0.7,
+      VALIDATION_CONFIG.DEFAULT_MIN_CONFIDENCE,
       min_segment_duration
     );
 

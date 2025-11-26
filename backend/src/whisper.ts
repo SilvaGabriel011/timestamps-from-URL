@@ -6,6 +6,7 @@ import { AppError } from './errors';
 import { downloadYouTubeAudio } from './audio-ytdlp';
 import { getCachedTranscript, cacheTranscript } from './cache';
 import { splitAudioIntoChunks, cleanupChunks, mergeChunkTranscripts, type AudioChunk } from './audio-chunker';
+import { VALIDATION_CONFIG } from './validation-config';
 
 const TEMP_DIR = path.join(process.cwd(), 'temp');
 
@@ -176,7 +177,7 @@ export async function getTranscriptWithWhisper(
   try {
     // Step 1: Download audio from YouTube
     console.log(`\n[Whisper] 📥 STEP 1/3: Downloading audio for video ${videoId}...`);
-    audioPath = await downloadYouTubeAudio(videoId, 10800); // Max 3 hours for Whisper
+    audioPath = await downloadYouTubeAudio(videoId, VALIDATION_CONFIG.MAX_VIDEO_DURATION);
     console.log(`[Whisper] ✅ Audio downloaded successfully to ${audioPath}`);
     
     // Step 2: Transcribe with Whisper
