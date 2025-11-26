@@ -3,6 +3,7 @@ import type { Transcript, TranscriptSegment } from './types';
 import { parseYouTubeError } from './errors';
 import { getTranscriptWithWhisper } from './whisper';
 import { getCachedTranscript, cacheTranscript } from './cache';
+import { msToSeconds, formatTimestamp as formatTime } from './time-utils';
 
 /**
  * Extract video ID from YouTube URL
@@ -94,8 +95,8 @@ export async function getTranscript(
 
     const segments: TranscriptSegment[] = transcriptItems.map((item) => ({
       text: item.text,
-      offset: item.offset / 1000, // Convert to seconds
-      duration: item.duration / 1000, // Convert to seconds
+      offset: msToSeconds(item.offset),
+      duration: msToSeconds(item.duration),
     }));
 
     const transcript: Transcript = {
@@ -121,8 +122,8 @@ export async function getTranscript(
 
         const segments: TranscriptSegment[] = transcriptItems.map((item) => ({
           text: item.text,
-          offset: item.offset / 1000,
-          duration: item.duration / 1000,
+          offset: msToSeconds(item.offset),
+          duration: msToSeconds(item.duration),
         }));
 
         const transcript: Transcript = {
@@ -149,8 +150,8 @@ export async function getTranscript(
 
       const segments: TranscriptSegment[] = transcriptItems.map((item) => ({
         text: item.text,
-        offset: item.offset / 1000,
-        duration: item.duration / 1000,
+        offset: msToSeconds(item.offset),
+        duration: msToSeconds(item.duration),
       }));
 
       const transcript: Transcript = {
@@ -197,17 +198,12 @@ export async function getTranscript(
 }
 
 /**
- * Format timestamp from seconds to MM:SS or HH:MM:SS
+ * Format timestamp from seconds to MM:SS or HH:MM:SS.
+ * Re-exported from time-utils for backward compatibility.
+ * @see time-utils.formatTimestamp
  */
 export function formatTimestamp(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  }
-  return `${minutes}:${secs.toString().padStart(2, '0')}`;
+  return formatTime(seconds);
 }
 
 /**

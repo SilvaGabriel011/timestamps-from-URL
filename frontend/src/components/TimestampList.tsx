@@ -16,10 +16,28 @@ interface TimestampListProps {
   metadata: GenerationMetadata | null;
 }
 
+/**
+ * Time formatting constants.
+ * These match the backend time-utils.ts for consistency.
+ */
+const SECONDS_PER_MINUTE = 60;
+const SECONDS_PER_HOUR = 3600;
+
+/**
+ * Format a timestamp from seconds to human-readable format.
+ * Uses MM:SS for times under an hour, HH:MM:SS for longer times.
+ * Always floors to the nearest second for display consistency.
+ * 
+ * NOTE: This logic must match backend/src/time-utils.ts formatTimestamp()
+ * 
+ * @param seconds - Time in seconds (can be floating-point)
+ * @returns Formatted timestamp string (e.g., "1:05" or "1:01:05")
+ */
 function formatTime(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
+  const totalSeconds = Math.floor(seconds);
+  const hours = Math.floor(totalSeconds / SECONDS_PER_HOUR);
+  const minutes = Math.floor((totalSeconds % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE);
+  const secs = totalSeconds % SECONDS_PER_MINUTE;
 
   if (hours > 0) {
     return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
