@@ -7,36 +7,55 @@ import type { Transcript, TimestampCandidate } from './types';
 export function validateTimestamps(
   timestamps: TimestampCandidate[],
   transcript: Transcript,
-  minConfidence: number = 0.7,
-  minDuration: number = 30
+  minConfidence: number = 0.6,  // Reduced from 0.7
+  minDuration: number = 25       // Reduced from 30
 ): TimestampCandidate[] {
   const validated: TimestampCandidate[] = [];
   let lastTime = -minDuration;
 
   // Calculate total duration
-  const lastSegment = transcript.segments[transcript.segments.length - 1];
-  const totalDuration = lastSegment
-    ? lastSegment.offset + lastSegment.duration
-    : 0;
+  let totalDuration = 0;
+  if (transcript.segments.length > 0) {
+    const lastSegment = transcript.segments[transcript.segments.length - 1];
+    totalDuration = lastSegment ? (lastSegment.offset + lastSegment.duration) : 0;
+    
+    // Fallback: if duration is 0, estimate based on number of segments
+    // Average speech rate is ~150 words per minute, and segments are typically 10-15 seconds
+    if (totalDuration === 0) {
+      // Estimate 10 seconds per segment as a rough fallback
+      totalDuration = transcript.segments.length * 10;
+      console.log(`[Validator] WARNING: Duration was 0, estimated ${totalDuration}s based on ${transcript.segments.length} segments`);
+    }
+  }
+  
+  // For very long videos, ensure we have a reasonable max duration (3 hours)
+  totalDuration = Math.min(totalDuration, 10800);
+  
+  console.log(`[Validator] Video duration: ${totalDuration}s (${Math.floor(totalDuration/60)} minutes)`);
 
   for (const ts of timestamps) {
     // Validation 1: Minimum confidence
     if ((ts.confidence ?? 0) < minConfidence) {
+      console.log(`[Validator] Rejected "${ts.title}" at ${ts.time}s - Low confidence: ${ts.confidence} < ${minConfidence}`);
       continue;
     }
 
-    // Validation 2: Timestamp is within video duration
-    if (ts.time < 0 || ts.time > totalDuration) {
+    // Validation 2: Timestamp is within video duration (add 10% tolerance for rounding errors)
+    const maxAllowedTime = totalDuration * 1.1;
+    if (ts.time < 0 || ts.time > maxAllowedTime) {
+      console.log(`[Validator] Rejected "${ts.title}" - Time out of bounds: ${ts.time}s (video: 0-${totalDuration}s)`);
       continue;
     }
 
     // Validation 3: Minimum spacing
     if (ts.time - lastTime < minDuration) {
+      console.log(`[Validator] Rejected "${ts.title}" at ${ts.time}s - Too close to previous: ${ts.time - lastTime}s < ${minDuration}s`);
       continue;
     }
 
     // Validation 4: Title is not empty
     if (!ts.title?.trim()) {
+      console.log(`[Validator] Rejected timestamp at ${ts.time}s - Empty title`);
       continue;
     }
 
@@ -46,14 +65,32 @@ export function validateTimestamps(
 
   // Log validation results
   console.log(`[Validator] Total candidates: ${timestamps.length}, Validated: ${validated.length}`);
+  if (validated.length > 0) {
+    console.log(`[Validator] Accepted timestamps:`);
+    validated.forEach(ts => {
+      console.log(`[Validator]   - ${Math.floor(ts.time/60)}:${Math.floor(ts.time%60).toString().padStart(2, '0')} "${ts.title}" (confidence: ${ts.confidence})`);
+    });
+  }
   
   // Add initial timestamp if not present
-  if (validated.length === 0 || validated[0].time > 10) {
+  if (validated.length > 0 && validated[0].time > 10) {
     const firstSegment = transcript.segments[0];
-    console.log(`[Validator] Adding default 'Introdução' timestamp. Total segments: ${transcript.segments.length}`);
+    console.log(`[Validator] Adding intro timestamp at 0:00`);
     validated.unshift({
       time: 0,
       title: 'Introdução',
+      confidence: 1.0,
+      evidence: firstSegment?.text ?? '',
+    });
+  }
+  
+  // Only add default intro if no timestamps at all (GPT failed completely)
+  if (validated.length === 0) {
+    console.log(`[Validator] WARNING: No valid timestamps generated. Adding default intro.`);
+    const firstSegment = transcript.segments[0];
+    validated.push({
+      time: 0,
+      title: 'Introdução ao conteúdo',
       confidence: 1.0,
       evidence: firstSegment?.text ?? '',
     });

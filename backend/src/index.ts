@@ -93,13 +93,14 @@ app.post('/api/generate', async (req: Request, res: Response, next: NextFunction
     }
 
     // Get transcript (with Whisper fallback if no subtitles)
-    const { transcript, fromCache } = await getTranscript(videoId, language, true, apiKey, force_whisper);
+    const { transcript, fromCache, videoTitle } = await getTranscript(videoId, language, true, apiKey, force_whisper);
 
     // Generate timestamps with AI
     const aiResult = await generateTimestampsWithAI(
       transcript,
       min_segment_duration,
-      apiKey
+      apiKey,
+      videoTitle
     );
 
     // Validate timestamps

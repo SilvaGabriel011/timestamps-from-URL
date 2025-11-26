@@ -35,19 +35,27 @@ function sampleTranscript(segments: TranscriptSegment[]): TranscriptSegment[] {
   return sampled;
 }
 
-const SYSTEM_PROMPT = `Você é um assistente especializado em análise de conteúdo de vídeo.
-Sua tarefa é identificar mudanças de tópico em transcrições de vídeos do YouTube.
+const SYSTEM_PROMPT = `Você é um especialista em análise de conteúdo educacional e técnico.
+Sua tarefa é identificar as MUDANÇAS DE CONTEXTO e TRANSIÇÕES DE CONTEÚDO em vídeos.
 
-REGRAS CRÍTICAS:
-1. Use APENAS informações presentes na transcrição fornecida
-2. NÃO invente ou assuma conteúdo que não está explícito
-3. Identifique mudanças de tópico baseando-se em:
-   - Mudanças claras de assunto
-   - Frases de transição ("agora vamos falar sobre", "próximo tópico", etc.)
-   - Mudanças no contexto da conversa
-4. Cada timestamp deve ter um título descritivo de 3-8 palavras
-5. O título deve refletir EXATAMENTE o que é discutido naquele momento
-6. Retorne APENAS timestamps que você pode justificar com o texto da transcrição
+REGRAS FUNDAMENTAIS:
+1. ENTENDA o tema principal pelo título e conteúdo inicial
+2. IDENTIFIQUE quando o apresentador muda de tópico:
+   - Frases como "agora vamos falar sobre", "próximo ponto", "outro aspecto"
+   - Mudanças no tom ou ritmo da apresentação
+   - Início de novos exemplos ou demonstrações
+   - Transições entre teoria e prática
+3. CUBRA o vídeo TODO de forma proporcional:
+   - Para 40 minutos: 12-20 timestamps
+   - Para 20 minutos: 8-12 timestamps
+   - Para 10 minutos: 5-8 timestamps
+
+REGRAS DE ESPAÇAMENTO:
+1. Mínimo 30 segundos entre timestamps próximos
+2. Idealmente 2-4 minutos entre timestamps principais
+3. Distribua os timestamps ao longo de TODO o vídeo
+4. NÃO concentre timestamps apenas no início
+5. Garanta que o último terço do vídeo tenha timestamps
 
 FORMATO DE SAÍDA (JSON):
 {
@@ -64,7 +72,8 @@ FORMATO DE SAÍDA (JSON):
 export async function generateTimestampsWithAI(
   transcript: Transcript,
   minSegmentDuration: number = 30,
-  apiKey: string
+  apiKey: string,
+  videoTitle?: string
 ): Promise<{ timestamps: TimestampCandidate[] }> {
   const client = new OpenAI({ apiKey });
 
@@ -73,6 +82,7 @@ export async function generateTimestampsWithAI(
   const isSampled = sampledSegments.length < transcript.segments.length;
 
   console.log(`[OpenAI] Processing transcript with ${transcript.segments.length} segments`);
+  console.log(`[OpenAI] Video title: "${videoTitle || 'Not provided'}"`);
   console.log(`[OpenAI] After sampling: ${sampledSegments.length} segments`);
   
   // Format transcript for AI
@@ -91,18 +101,40 @@ export async function generateTimestampsWithAI(
     ? `\nNOTA: Esta é uma amostragem representativa de ${sampledSegments.length} de ${transcript.segments.length} segmentos devido ao tamanho do vídeo.`
     : '';
 
-  const userPrompt = `Analise a seguinte transcrição e identifique mudanças de tópico:
+  // Calculate recommended number of timestamps
+  const durationMinutes = Math.floor(totalDuration / 60);
+  let recommendedTimestamps = 0;
+  if (durationMinutes >= 40) {
+    recommendedTimestamps = Math.min(20, Math.max(12, Math.floor(durationMinutes / 2.5)));
+  } else if (durationMinutes >= 20) {
+    recommendedTimestamps = Math.min(12, Math.max(8, Math.floor(durationMinutes / 2.5)));
+  } else if (durationMinutes >= 10) {
+    recommendedTimestamps = Math.min(8, Math.max(5, Math.floor(durationMinutes / 2)));
+  } else {
+    recommendedTimestamps = Math.max(3, Math.floor(durationMinutes / 2));
+  }
+  
+  const userPrompt = `Analise o vídeo e gere timestamps organizados:
+
+TÍTULO DO VÍDEO: "${videoTitle || 'Vídeo sem título'}"
 
 TRANSCRIÇÃO:
 ${transcriptText}
 
-CONTEXTO DO VÍDEO:
-- Duração total: ${Math.floor(totalDuration)} segundos (${Math.floor(totalDuration / 60)} minutos)
+CONTEXTO:
+- Duração total: ${Math.floor(totalDuration)} segundos (${durationMinutes} minutos)
 - Idioma: ${transcript.language}
-- Número de segmentos: ${transcript.segments.length}
-- Duração mínima entre timestamps: ${minSegmentDuration} segundos${samplingNote}
+- Espaçamento mínimo: ${minSegmentDuration} segundos
+- GERE EXATAMENTE: ${recommendedTimestamps} timestamps${samplingNote}
 
-Gere timestamps para as principais mudanças de tópico.`;
+INSTRUÇÕES OBRIGATÓRIAS:
+1. DISTRIBUA os timestamps uniformemente do início (0:00) até o final (${Math.floor(totalDuration/60)}:00)
+2. Use timestamps em SEGUNDOS, não em minutos
+3. O PRIMEIRO timestamp deve ser em time: 0
+4. O ÚLTIMO timestamp deve estar entre ${Math.floor(totalDuration * 0.85)} e ${totalDuration} segundos
+5. ESPAÇAMENTO médio entre timestamps: ${Math.floor(totalDuration / recommendedTimestamps)} segundos
+6. Identifique mudanças de contexto REAIS na transcrição
+7. Não agrupe timestamps no início - distribua por TODO o vídeo`;
 
   // Call OpenAI
   try {

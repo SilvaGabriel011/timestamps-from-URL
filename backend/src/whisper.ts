@@ -5,6 +5,7 @@ import { Transcript, TranscriptSegment } from './types';
 import { AppError } from './errors';
 import { downloadYouTubeAudio } from './audio-ytdlp';
 import { getCachedTranscript, cacheTranscript } from './cache';
+import { splitAudioIntoChunks, cleanupChunks, mergeChunkTranscripts, type AudioChunk } from './audio-chunker';
 
 const TEMP_DIR = path.join(process.cwd(), 'temp');
 
@@ -17,116 +18,125 @@ if (!fs.existsSync(TEMP_DIR)) {
 /**
  * Transcribe audio using OpenAI Whisper API
  */
+/**
+ * Transcribe a single audio chunk using Whisper API
+ */
+async function transcribeChunk(
+  chunkPath: string,
+  apiKey: string,
+  language: string,
+  chunkIndex: number,
+  totalChunks: number
+): Promise<any> {
+  const client = new OpenAI({ apiKey });
+  
+  console.log(`[Whisper] 🎙️ Processing chunk ${chunkIndex + 1}/${totalChunks}...`);
+  const audioFile = fs.createReadStream(chunkPath);
+    
+  const startTime = Date.now();
+  
+  try {
+    const transcription = await client.audio.transcriptions.create({
+      file: audioFile as any,
+      model: 'whisper-1',
+      language: language === 'pt' ? 'pt' : language,
+      response_format: 'verbose_json',
+      timestamp_granularities: ['segment'],
+    });
+    
+    const elapsedTime = Math.round((Date.now() - startTime) / 1000);
+    console.log(`[Whisper] ✅ Chunk ${chunkIndex + 1} transcribed in ${elapsedTime} seconds`);
+    
+    return transcription;
+  } catch (error: any) {
+    console.error(`[Whisper] ❌ Error transcribing chunk ${chunkIndex + 1}:`, error.message);
+    throw error;
+  }
+}
+
+/**
+ * Transcribe audio using OpenAI Whisper API with chunking support
+ */
 export async function transcribeWithWhisper(
   audioPath: string,
   apiKey: string,
   language: string = 'pt'
 ): Promise<Transcript> {
-  const client = new OpenAI({ apiKey });
-
   try {
     // Get file info
     const stats = fs.statSync(audioPath);
     const fileSizeMB = Math.round(stats.size / 1024 / 1024 * 10) / 10;
     console.log(`[Whisper] 📁 Audio file size: ${fileSizeMB}MB`);
     
-    // Estimate processing time (roughly 1 minute per 10MB)
-    const estimatedTime = Math.ceil(fileSizeMB / 10);
-    console.log(`[Whisper] ⏱️ Estimated processing time: ${estimatedTime} minute(s)`);
+    // Split audio into chunks if needed (24MB to stay under 25MB limit)
+    const chunks = await splitAudioIntoChunks(audioPath, 24); // 24MB chunks
     
-    // Read audio file
-    console.log(`[Whisper] 📖 Reading audio file...`);
-    const audioFile = fs.createReadStream(audioPath);
-    
-    // Call Whisper API with verbose_json response format to get timestamps
-    console.log(`[Whisper] 🚀 Sending to OpenAI Whisper API...`);
-    console.log(`[Whisper] ⌛ This may take ${estimatedTime} minute(s). Please wait...`);
-    
-    const startTime = Date.now();
-    
-    // Add timeout to prevent hanging (10 minutes for long videos)
-    const timeoutMinutes = Math.max(10, estimatedTime * 2); // At least 10 min, or 2x estimated
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => {
-      controller.abort();
-      console.error(`[Whisper] ❌ Timeout after ${timeoutMinutes} minutes`);
-    }, timeoutMinutes * 60 * 1000);
-    
-    console.log(`[Whisper] ⏰ Timeout set to ${timeoutMinutes} minutes`);
-    
-    try {
-      const transcription = await client.audio.transcriptions.create({
-        file: audioFile as any,
-        model: 'whisper-1',
-        language: language === 'pt' ? 'pt' : language,
-        response_format: 'verbose_json',
-        timestamp_granularities: ['segment'],
-      });
-      
-      clearTimeout(timeoutId);
-      
-      const elapsedTime = Math.round((Date.now() - startTime) / 1000);
-      console.log(`[Whisper] ✅ Transcription completed in ${elapsedTime} seconds`);
-    
-      console.log(`[Whisper] 📊 Received transcription response. Keys:`, Object.keys(transcription));
-    console.log(`[Whisper] Has segments:`, 'segments' in transcription);
-    console.log(`[Whisper] Segments count:`, (transcription as any).segments?.length || 0);
-
-    // Parse the segments from Whisper response
-    const segments: TranscriptSegment[] = [];
-    
-    if ('segments' in transcription && Array.isArray(transcription.segments)) {
-      console.log(`[Whisper] Processing ${transcription.segments.length} segments...`);
-      for (const segment of transcription.segments) {
-        segments.push({
-          text: segment.text,
-          offset: segment.start,
-          duration: segment.end - segment.start,
-        });
-      }
-    } else if ('text' in transcription) {
-      // Fallback if no segments are provided
-      console.log(`[Whisper] No segments, using full text fallback`);
-      const fullText = transcription.text as string;
-      console.log(`[Whisper] Full text length: ${fullText.length} chars`);
-      segments.push({
-        text: fullText,
-        offset: 0,
-        duration: 0,
-      });
-    } else {
-      console.error(`[Whisper] WARNING: No segments and no text in transcription!`);
+    if (chunks.length > 1) {
+      console.log(`[Whisper] 🔄 Processing ${chunks.length} chunks...`);
     }
     
-    console.log(`[Whisper] Final segments count: ${segments.length}`);
+    // Process all chunks
+    const chunkTranscripts: Array<{ segments: TranscriptSegment[], startOffset: number }> = [];
+    
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const transcription = await transcribeChunk(
+        chunk.path,
+        apiKey,
+        language,
+        i,
+        chunks.length
+      );
+      
+      console.log(`[Whisper] 📊 Chunk ${i + 1} has ${transcription.segments?.length || 0} segments`);
+
+      // Parse the segments from this chunk
+      const chunkSegments: TranscriptSegment[] = [];
+      
+      if ('segments' in transcription && Array.isArray(transcription.segments)) {
+        for (const segment of transcription.segments) {
+          chunkSegments.push({
+            text: segment.text,
+            offset: segment.start,
+            duration: segment.end - segment.start,
+          });
+        }
+      } else if ('text' in transcription) {
+        // Fallback if no segments
+        chunkSegments.push({
+          text: transcription.text as string,
+          offset: 0,
+          duration: chunk.duration,
+        });
+      }
+      
+      chunkTranscripts.push({
+        segments: chunkSegments,
+        startOffset: chunk.startTime
+      });
+    }
+    
+    // Merge all chunk transcripts
+    const segments = chunks.length > 1 
+      ? mergeChunkTranscripts(chunkTranscripts)
+      : chunkTranscripts[0]?.segments || [];
+    
+    console.log(`[Whisper] 📊 Total segments from all chunks: ${segments.length}`);
+    
+    // Clean up chunk files
+    if (chunks.length > 1) {
+      cleanupChunks(chunks);
+    }
 
     const result: Transcript = {
       videoId: path.basename(audioPath, path.extname(audioPath)),
-      language: transcription.language || language,
+      language: language, // Use the provided language
       segments,
       isAutoGenerated: false, // Whisper transcriptions are not auto-generated
     };
     
     console.log(`[Whisper] Returning transcript with ${segments.length} segments`);
     return result;
-    } catch (apiError: any) {
-      clearTimeout(timeoutId);
-      
-      if (apiError.name === 'AbortError') {
-        throw new AppError({
-          code: 'WHISPER_TIMEOUT' as any,
-          message: `Whisper API timed out after ${timeoutMinutes} minutes`,
-          userMessage: 'Transcrição demorou muito tempo (timeout)',
-          suggestions: [
-            'Tente novamente',
-            'O vídeo pode estar muito longo ou complexo',
-            'Verifique sua conexão com a internet',
-          ],
-          httpStatus: 504,
-        });
-      }
-      throw apiError;
-    }
   } catch (error: any) {
     console.error(`[Whisper] ❌ Error during transcription:`, error.message);
     if (error.response?.status === 413) {
