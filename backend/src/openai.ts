@@ -78,6 +78,12 @@ export async function generateTimestampsWithAI(
   apiKey: string,
   videoTitle?: string
 ): Promise<{ timestamps: TimestampCandidate[] }> {
+  // Guard against empty transcripts - don't send to AI if there's no content
+  if (!transcript.segments || transcript.segments.length === 0) {
+    console.warn('[OpenAI] Received empty transcript, skipping AI generation');
+    return { timestamps: [] };
+  }
+
   const client = new OpenAI({ apiKey });
 
   // Sample transcript if too long (for videos >45 minutes)

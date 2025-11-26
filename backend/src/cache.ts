@@ -57,6 +57,13 @@ export function getCachedTranscript(
       return null;
     }
 
+    // Invalidate empty transcripts (defensive check for previously cached bad data)
+    if (!entry.transcript.segments || entry.transcript.segments.length === 0) {
+      console.log(`[Cache] Invalid or empty transcript for ${videoId}, deleting cache and forcing re-fetch`);
+      fs.unlinkSync(cachePath);
+      return null;
+    }
+
     console.log(`[Cache] Hit! Using cached transcript for video ${videoId} (${entry.source})`);
     return {
       transcript: entry.transcript,
