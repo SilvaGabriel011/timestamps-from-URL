@@ -20,7 +20,8 @@ class Timestamp:
     confidence: float = 1.0
 
 
-SYSTEM_PROMPT = """You are a video content analyzer. Your task is to identify key topic changes and important moments in a video transcript to create chapter timestamps.
+# English system prompt
+SYSTEM_PROMPT_EN = """You are a video content analyzer. Your task is to identify key topic changes and important moments in a video transcript to create chapter timestamps.
 
 RULES:
 1. Only use information that appears in the transcript - never invent content
@@ -41,6 +42,67 @@ OUTPUT FORMAT:
 
 The time values must be in seconds (integers).
 """
+
+# Prompt otimizado para DeepSeek + PORTUGUES BRASILEIRO
+SYSTEM_PROMPT_PT = """Você é um especialista brasileiro em criar timestamps para vídeos do YouTube BR.
+
+TAREFA: Criar CAPÍTULOS para o vídeo baseado na transcrição.
+
+REGRAS:
+1. Títulos em PORTUGUÊS BRASILEIRO natural (como youtubers BR escrevem)
+2. Use palavras que APARECEM na transcrição - não invente
+3. Títulos de 3-6 palavras, diretos e específicos
+4. Mínimo {min_duration} segundos entre timestamps
+5. Para vídeos longos (40+ min): 12-18 timestamps
+
+EXEMPLOS DE BONS TÍTULOS (estilo YouTube BR):
+- "O que é ser dev junior"
+- "Erro que todo iniciante comete"  
+- "Como estudar programação"
+- "Minha rotina de trabalho"
+- "Respondendo comentários"
+- "Patrocínio do vídeo"
+- "Recado final"
+
+EXEMPLOS RUINS (não use):
+- "Tópico 1", "Parte 2", "Seção 3"
+- "Introdução ao assunto"
+- "Continuação do tema anterior"
+- "Considerações importantes"
+
+DETECTAR MUDANÇAS DE ASSUNTO:
+- "bora falar sobre", "agora vamos", "outro ponto"
+- "primeiro", "segundo", "próximo"
+- "falando em", "sobre isso", "voltando"
+- Patrocínio: "parceiro", "patrocinador", "apoio"
+- Final: "pra fechar", "resumindo", "é isso galera"
+
+FORMATO JSON (APENAS ISSO, SEM TEXTO EXTRA):
+{{
+  "timestamps": [
+    {{"time": 0, "title": "Abertura do vídeo"}},
+    {{"time": 95, "title": "O que faz um dev junior"}},
+    {{"time": 240, "title": "Habilidades essenciais"}},
+    {{"time": 480, "title": "Erros comuns"}},
+    {{"time": 720, "title": "Dicas práticas"}},
+    {{"time": 900, "title": "Encerramento"}}
+  ]
+}}
+
+IMPORTANTE: time em SEGUNDOS (número inteiro). Extraia do conteúdo REAL!
+"""
+
+def get_system_prompt(language: str, min_duration: int, video_duration: float) -> str:
+    """Get the appropriate system prompt based on language."""
+    # Calculate expected number of timestamps (roughly 1 per 2-3 minutes)
+    expected_timestamps = max(5, int(video_duration / 150))  # ~2.5 min per timestamp
+    
+    if language and language.lower() in ('pt', 'pt-br', 'portuguese'):
+        return SYSTEM_PROMPT_PT.format(
+            min_duration=min_duration,
+            expected_timestamps=expected_timestamps
+        )
+    return SYSTEM_PROMPT_EN.format(min_duration=min_duration)
 
 
 def check_ollama_available(ollama_url: str = "http://localhost:11434") -> bool:
@@ -69,10 +131,13 @@ def generate_timestamps(
     video_title: str,
     min_duration: int = 30,
     ollama_url: str = "http://localhost:11434",
-    model: str = "llama3.2"
+    model: str = "llama3.2",
+    use_heuristics_fallback: bool = True
 ) -> List[Timestamp]:
     """
-    Generate timestamps from transcript using local Ollama LLM.
+    Generate timestamps from transcript using Ollama LLM or heuristics.
+    
+    Optimized for Portuguese content and long videos (30-60 min).
     
     Args:
         transcript: Transcript object with segments
@@ -80,14 +145,30 @@ def generate_timestamps(
         min_duration: Minimum seconds between timestamps
         ollama_url: Ollama server URL
         model: Ollama model to use
+        use_heuristics_fallback: Use heuristic analysis if Ollama fails
         
     Returns:
         List of Timestamp objects
-        
-    Raises:
-        ValueError: If generation fails
     """
-    if not check_ollama_available(ollama_url):
+    # Check if Ollama is available
+    ollama_available = check_ollama_available(ollama_url)
+    
+    if not ollama_available and use_heuristics_fallback:
+        print("[TimestampGen] Ollama not available, using heuristic analysis...")
+        from .smart_timestamp_generator import generate_smart_timestamps
+        smart_timestamps = generate_smart_timestamps(transcript, video_title, min_duration)
+        
+        # Convert dict to Timestamp objects
+        timestamps = []
+        for ts_dict in smart_timestamps:
+            timestamps.append(Timestamp(
+                time=ts_dict["time"],
+                title=ts_dict["title"],
+                confidence=0.8
+            ))
+        return timestamps
+    
+    if not ollama_available:
         raise ValueError(
             "Ollama is not running. Please start it with: ollama serve\n"
             "Then pull a model with: ollama pull llama3.2"
@@ -108,20 +189,38 @@ def generate_timestamps(
     # Handle empty transcript
     if not transcript.segments:
         print("[TimestampGen] Empty transcript, returning default timestamp")
-        return [Timestamp(time=0, title="Video Content", confidence=0.5)]
+        default_title = "Conteúdo do Vídeo" if transcript.language in ('pt', 'pt-br') else "Video Content"
+        return [Timestamp(time=0, title=default_title, confidence=0.5)]
     
     # Prepare transcript for LLM
     transcript_text = get_transcript_for_llm(transcript)
     
-    # Limit transcript length to avoid token limits
-    max_chars = 50000
+    # Limit transcript length to avoid token limits - increased for long videos
+    max_chars = 80000  # Increased from 50000 for 40-min videos
     if len(transcript_text) > max_chars:
         print(f"[TimestampGen] Truncating transcript from {len(transcript_text)} to {max_chars} chars")
-        transcript_text = transcript_text[:max_chars] + "\n[... transcript truncated ...]"
+        # Smart truncation: keep beginning and end
+        half = max_chars // 2
+        transcript_text = transcript_text[:half] + "\n\n[... conteúdo omitido ...]\n\n" + transcript_text[-half:]
     
-    # Build prompt
-    system_prompt = SYSTEM_PROMPT.format(min_duration=min_duration)
-    user_prompt = f"""Video Title: {video_title}
+    # Check if Portuguese
+    is_portuguese = transcript.language and transcript.language.lower() in ('pt', 'pt-br', 'portuguese')
+    
+    # Build prompt based on language
+    system_prompt = get_system_prompt(transcript.language, min_duration, transcript.duration)
+    
+    if is_portuguese:
+        user_prompt = f"""Título do Vídeo: {video_title}
+Duração do Vídeo: {format_time(transcript.duration)}
+Idioma: Português Brasileiro
+
+Transcrição:
+{transcript_text}
+
+Gere timestamps para este vídeo. Lembre-se de retornar APENAS JSON válido.
+Os títulos devem estar em português brasileiro."""
+    else:
+        user_prompt = f"""Video Title: {video_title}
 Video Duration: {format_time(transcript.duration)}
 
 Transcript:
@@ -130,6 +229,10 @@ Transcript:
 Generate timestamps for this video. Remember to return ONLY valid JSON."""
 
     print(f"[TimestampGen] Sending to Ollama ({model})...")
+    print(f"[TimestampGen] Video duration: {format_time(transcript.duration)}, Language: {transcript.language}")
+    
+    # Increase timeout for long videos (40 min video = ~4 min processing)
+    timeout = max(180, int(transcript.duration / 10))  # At least 3 min, or 1/10 of video duration
     
     try:
         response = requests.post(
@@ -140,11 +243,12 @@ Generate timestamps for this video. Remember to return ONLY valid JSON."""
                 "system": system_prompt,
                 "stream": False,
                 "options": {
-                    "temperature": 0.3,
-                    "num_predict": 2000
+                    "temperature": 0.2,  # Mais determinístico para JSON
+                    "num_predict": 4000,
+                    "num_ctx": 32768  # DeepSeek suporta contexto maior
                 }
             },
-            timeout=120
+            timeout=timeout
         )
         
         if response.status_code != 200:
@@ -155,16 +259,57 @@ Generate timestamps for this video. Remember to return ONLY valid JSON."""
         
         print(f"[TimestampGen] Received response, parsing...")
         
+        # Debug: print first 500 chars of response
+        if len(llm_response) > 500:
+            print(f"[TimestampGen] Response preview: {llm_response[:500]}...")
+        else:
+            print(f"[TimestampGen] Full response: {llm_response}")
+        
         # Parse JSON from response
         timestamps = parse_timestamps_from_response(llm_response, transcript.duration, min_duration)
         
-        print(f"[TimestampGen] Generated {len(timestamps)} timestamps")
+        print(f"[TimestampGen] Generated {len(timestamps)} timestamps from LLM")
+        
+        # If we got too few timestamps, supplement with heuristics
+        expected_count = max(5, int(transcript.duration / 150))  # ~1 per 2.5 minutes
+        if len(timestamps) < expected_count * 0.5 and use_heuristics_fallback:
+            print(f"[TimestampGen] Too few timestamps ({len(timestamps)} < {int(expected_count * 0.5)}), adding smart analysis...")
+            from .smart_timestamp_generator import generate_smart_timestamps
+            smart_ts = generate_smart_timestamps(transcript, video_title, min_duration)
+            
+            # Convert to Timestamp objects
+            heuristic_timestamps = []
+            for ts_dict in smart_ts:
+                heuristic_timestamps.append(Timestamp(
+                    time=ts_dict["time"],
+                    title=ts_dict["title"],
+                    confidence=0.7
+                ))
+            
+            # Merge timestamps (prefer LLM but add missing heuristic ones)
+            existing_times = {ts.time for ts in timestamps}
+            for h_ts in heuristic_timestamps:
+                # Add if no timestamp within 30 seconds
+                if not any(abs(h_ts.time - t) < 30 for t in existing_times):
+                    timestamps.append(h_ts)
+            
+            # Re-sort by time
+            timestamps.sort(key=lambda x: x.time)
+            print(f"[TimestampGen] Final count: {len(timestamps)} timestamps (LLM + heuristics)")
         
         return timestamps
         
     except requests.exceptions.Timeout:
+        if use_heuristics_fallback:
+            print("[TimestampGen] Ollama timeout, falling back to heuristics...")
+            from .timestamp_analyzer import generate_timestamps_heuristic
+            return generate_timestamps_heuristic(transcript, min_duration)
         raise ValueError("Ollama request timed out. The model may be too slow or the transcript too long.")
     except Exception as e:
+        if use_heuristics_fallback:
+            print(f"[TimestampGen] Ollama failed ({e}), falling back to heuristics...")
+            from .timestamp_analyzer import generate_timestamps_heuristic
+            return generate_timestamps_heuristic(transcript, min_duration)
         raise ValueError(f"Timestamp generation failed: {e}")
 
 
@@ -207,6 +352,11 @@ def parse_timestamps_from_response(
     
     for ts in raw_timestamps:
         try:
+            # Check if ts is a dict
+            if not isinstance(ts, dict):
+                print(f"[TimestampGen] Warning: Invalid timestamp format: {type(ts)} - {ts}")
+                continue
+                
             time = float(ts.get("time", 0))
             title = str(ts.get("title", "")).strip()
             

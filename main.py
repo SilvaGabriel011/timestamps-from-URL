@@ -5,11 +5,13 @@ YouTube Timestamp Generator - Local CLI Application
 A simple, local-only CLI tool that generates video transcripts and timestamps
 from YouTube URLs using local AI models (Whisper + Ollama).
 
+Optimized for Brazilian Portuguese (pt-BR) content and long videos (30-60 min).
+
 Usage:
     python main.py <youtube_url> [options]
 
 Example:
-    python main.py "https://www.youtube.com/watch?v=VIDEO_ID" -o ./output -m base
+    python main.py "https://www.youtube.com/watch?v=VIDEO_ID" -o ./output -m small -l pt
 """
 
 import argparse
@@ -43,7 +45,8 @@ def check_dependencies():
     # Check yt-dlp
     try:
         import subprocess
-        result = subprocess.run(['yt-dlp', '--version'], capture_output=True, timeout=5)
+        import sys
+        result = subprocess.run([sys.executable, '-m', 'yt_dlp', '--version'], capture_output=True, timeout=5)
         if result.returncode != 0:
             errors.append("yt-dlp is not working properly")
     except FileNotFoundError:
@@ -105,22 +108,22 @@ Output files:
     
     parser.add_argument(
         '-m', '--model',
-        default='base',
+        default='small',
         choices=['tiny', 'base', 'small', 'medium', 'large-v3'],
-        help='Whisper model size (default: base)'
+        help='Whisper model size (default: small - recommended for PT-BR)'
     )
     
     parser.add_argument(
         '-l', '--language',
-        default=None,
-        help='Preferred language code (e.g., en, pt, es). Default: auto-detect'
+        default='pt',
+        help='Preferred language code (default: pt for Portuguese). Use "auto" for auto-detect'
     )
     
     parser.add_argument(
         '--min-duration',
         type=int,
-        default=30,
-        help='Minimum seconds between timestamps (default: 30)'
+        default=60,
+        help='Minimum seconds between timestamps (default: 60 for long videos)'
     )
     
     parser.add_argument(
@@ -210,10 +213,13 @@ Output files:
             print("STEP 2/3: Transcribing audio with Whisper")
             print("=" * 60)
         
+        # Handle "auto" language option
+        language = None if args.language.lower() == 'auto' else args.language
+        
         transcript = transcribe(
             audio_info.audio_path,
             model_size=args.model,
-            language=args.language
+            language=language
         )
         
         if not args.quiet:

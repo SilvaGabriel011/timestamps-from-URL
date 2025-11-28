@@ -1,6 +1,8 @@
 # YouTube Timestamp Generator
 
-A simple, local-only CLI application that generates video transcripts and timestamps from YouTube URLs. The entire process runs locally without any paid APIs or cloud services.
+Uma aplicação CLI local que gera transcrições e timestamps de vídeos do YouTube. Todo o processamento é feito localmente, sem APIs pagas ou serviços em nuvem.
+
+**Otimizado para vídeos em Português Brasileiro (PT-BR) de 35-40 minutos.**
 
 ## Features
 
@@ -9,6 +11,8 @@ A simple, local-only CLI application that generates video transcripts and timest
 - Generates timestamps using local LLM (Ollama)
 - Outputs transcript and timestamps to local files
 - 100% free, no API keys required
+- **Optimized for Brazilian Portuguese** with custom prompts and hotwords
+- **Long video support** (30-60 minutes) with adaptive timeouts
 
 ## Requirements
 
@@ -46,20 +50,28 @@ ollama pull llama3.2
 
 ## Usage
 
-### Basic Usage
+### Basic Usage (Portuguese - Default)
 
 ```bash
 python main.py "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
+Por padrão, a aplicação já está configurada para português brasileiro.
+
 ### With Options
 
 ```bash
-python main.py "https://www.youtube.com/watch?v=VIDEO_ID" \
-  --output ./my_output \
-  --model small \
-  --language pt \
-  --min-duration 60
+# Vídeo em português (padrão)
+python main.py "https://www.youtube.com/watch?v=VIDEO_ID"
+
+# Vídeo em inglês
+python main.py "https://www.youtube.com/watch?v=VIDEO_ID" -l en
+
+# Auto-detectar idioma
+python main.py "https://www.youtube.com/watch?v=VIDEO_ID" -l auto
+
+# Vídeo longo com modelo maior (mais preciso)
+python main.py "https://www.youtube.com/watch?v=VIDEO_ID" -m medium
 ```
 
 ### All Options
@@ -67,27 +79,56 @@ python main.py "https://www.youtube.com/watch?v=VIDEO_ID" \
 | Option | Description | Default |
 |--------|-------------|---------|
 | `-o, --output` | Output directory | `./output` |
-| `-m, --model` | Whisper model size (tiny, base, small, medium, large-v3) | `base` |
-| `-l, --language` | Preferred language code (en, pt, es, etc.) | auto-detect |
-| `--min-duration` | Minimum seconds between timestamps | `30` |
+| `-m, --model` | Whisper model size (tiny, base, small, medium, large-v3) | `small` |
+| `-l, --language` | Preferred language code (pt, en, es, etc.) or "auto" | `pt` |
+| `--min-duration` | Minimum seconds between timestamps | `60` |
 | `--ollama-model` | Ollama model for timestamp generation | `llama3.2` |
 | `--ollama-url` | Ollama server URL | `http://localhost:11434` |
 | `--keep-audio` | Keep downloaded audio file | `false` |
 | `--skip-timestamps` | Only generate transcript | `false` |
 | `-q, --quiet` | Suppress progress messages | `false` |
 
+### Recommended Settings for PT-BR Videos (35-40 min)
+
+```bash
+# Configuração recomendada para vídeos longos em português
+python main.py "URL" -m small -l pt --min-duration 90
+
+# Para máxima precisão (mais lento)
+python main.py "URL" -m medium -l pt --min-duration 60
+```
+
 ## Output Files
 
-After running, the output directory will contain:
+A aplicação gera 4 arquivos com diferentes níveis de detalhamento:
+
+### 1. Transcrição Completa (2 formatos)
+
+**VIDEO_ID_transcript.txt** - Texto com timestamps granulares para cada fala
 
 ```
-output/
-├── VIDEO_ID_transcript.txt    # Full transcript with timestamps
-├── VIDEO_ID_timestamps.txt    # YouTube-ready timestamp list
-└── VIDEO_ID_timestamps.json   # Structured timestamp data
+[0:00 - 0:04] Primeira fala do vídeo...
+[0:05 - 0:11] Segunda fala com tempo exato...
+[0:12 - 0:14] Terceira fala...
 ```
 
-### timestamps.txt (YouTube format)
+**VIDEO_ID_transcript.json** - JSON estruturado com todos os segmentos
+
+```json
+{
+  "segments": [
+    {
+      "start": 0.0, 
+      "end": 4.92,
+      "text": "Primeira fala..."
+    }
+  ]
+}
+```
+
+### 2. Timestamps por Tópicos (2 formatos)
+
+**VIDEO_ID_timestamps.txt** - Formato para descrição do YouTube
 
 ```
 Timestamps for: Video Title

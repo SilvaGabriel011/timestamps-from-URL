@@ -16,7 +16,7 @@ def export_transcript(
     include_timestamps: bool = True
 ) -> str:
     """
-    Export transcript to a text file.
+    Export transcript to a text file with granular timestamps.
     
     Args:
         transcript: Transcript object
@@ -30,16 +30,19 @@ def export_transcript(
     
     lines = []
     lines.append("=" * 60)
-    lines.append("TRANSCRIPT")
-    lines.append(f"Language: {transcript.language}")
-    lines.append(f"Duration: {format_time(transcript.duration)}")
+    lines.append("TRANSCRIÇÃO COMPLETA")
+    lines.append(f"Idioma: {transcript.language}")
+    lines.append(f"Duração Total: {format_time(transcript.duration)}")
+    lines.append(f"Total de Segmentos: {len(transcript.segments)}")
     lines.append("=" * 60)
     lines.append("")
     
     if include_timestamps:
-        for segment in transcript.segments:
-            time_str = format_time(segment.start)
-            lines.append(f"[{time_str}] {segment.text}")
+        for i, segment in enumerate(transcript.segments, 1):
+            start_str = format_time(segment.start)
+            end_str = format_time(segment.end)
+            # Formato: [00:00 - 00:15] Texto da fala
+            lines.append(f"[{start_str} - {end_str}] {segment.text}")
     else:
         lines.append(transcript.full_text)
     
@@ -52,6 +55,55 @@ def export_transcript(
         f.write(content)
     
     print(f"[Exporter] Saved transcript to: {output_path}")
+    return output_path
+
+
+def export_transcript_json(
+    transcript: Transcript,
+    output_path: str,
+    video_title: str = "",
+    video_id: str = ""
+) -> str:
+    """
+    Export full transcript with all segments to JSON (granular timestamps).
+    
+    Args:
+        transcript: Transcript object
+        output_path: Path to output file
+        video_title: Optional video title
+        video_id: Optional video ID
+        
+    Returns:
+        Path to created file
+    """
+    os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
+    
+    data = {
+        "video_title": video_title,
+        "video_id": video_id,
+        "language": transcript.language,
+        "duration": transcript.duration,
+        "duration_formatted": format_time(transcript.duration),
+        "segment_count": len(transcript.segments),
+        "segments": [
+            {
+                "index": i,
+                "start": segment.start,
+                "end": segment.end,
+                "start_formatted": format_time(segment.start),
+                "end_formatted": format_time(segment.end),
+                "duration": round(segment.end - segment.start, 2),
+                "text": segment.text
+            }
+            for i, segment in enumerate(transcript.segments)
+        ],
+        "full_text": transcript.full_text
+    }
+    
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    
+    print(f"[Exporter] Saved transcript (json) to: {output_path}")
     return output_path
 
 
@@ -149,7 +201,11 @@ def export_all(
     video_title: str
 ) -> dict:
     """
-    Export all outputs (transcript and timestamps in both formats).
+    Export all outputs:
+    - Transcrição completa (TXT) com timestamps granulares [início - fim]
+    - Transcrição completa (JSON) com todos os segmentos detalhados
+    - Timestamps por tópicos (TXT) para descrição do YouTube
+    - Timestamps por tópicos (JSON) estruturado
     
     Args:
         transcript: Transcript object
@@ -168,15 +224,19 @@ def export_all(
     
     paths = {}
     
-    # Export transcript
+    # 1. Export transcript (TXT) - transcrição granular com [início - fim]
     transcript_path = os.path.join(output_dir, f"{safe_id}_transcript.txt")
-    paths['transcript'] = export_transcript(transcript, transcript_path)
+    paths['transcript_txt'] = export_transcript(transcript, transcript_path)
     
-    # Export timestamps (txt format for YouTube)
+    # 2. Export transcript (JSON) - todos os segmentos com timestamps detalhados
+    transcript_json_path = os.path.join(output_dir, f"{safe_id}_transcript.json")
+    paths['transcript_json'] = export_transcript_json(transcript, transcript_json_path, video_title, video_id)
+    
+    # 3. Export timestamps/tópicos (TXT) - formato para YouTube
     timestamps_txt_path = os.path.join(output_dir, f"{safe_id}_timestamps.txt")
     paths['timestamps_txt'] = export_timestamps_txt(timestamps, timestamps_txt_path, video_title)
     
-    # Export timestamps (json format)
+    # 4. Export timestamps/tópicos (JSON) - estruturado
     timestamps_json_path = os.path.join(output_dir, f"{safe_id}_timestamps.json")
     paths['timestamps_json'] = export_timestamps_json(timestamps, timestamps_json_path, video_title, video_id)
     

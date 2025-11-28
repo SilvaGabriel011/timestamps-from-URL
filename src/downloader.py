@@ -5,9 +5,15 @@ Downloader Module - Downloads audio from YouTube videos using yt-dlp
 import os
 import re
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 from typing import Optional
+
+
+def get_ytdlp_cmd():
+    """Get the yt-dlp command as a list."""
+    return [sys.executable, '-m', 'yt_dlp']
 
 
 @dataclass
@@ -67,8 +73,7 @@ def get_video_info(url: str) -> VideoInfo:
     
     try:
         result = subprocess.run(
-            [
-                'yt-dlp',
+            get_ytdlp_cmd() + [
                 '--print', '%(title)s',
                 '--print', '%(duration)s',
                 '--no-download',
@@ -132,8 +137,7 @@ def download_audio(url: str, output_dir: Optional[str] = None) -> AudioInfo:
     
     try:
         result = subprocess.run(
-            [
-                'yt-dlp',
+            get_ytdlp_cmd() + [
                 '-x',  # Extract audio
                 '--audio-format', 'mp3',
                 '--audio-quality', '0',  # Best quality
@@ -144,7 +148,7 @@ def download_audio(url: str, output_dir: Optional[str] = None) -> AudioInfo:
             ],
             capture_output=True,
             text=True,
-            timeout=300  # 5 minutes max
+            timeout=900  # 15 minutes max for long videos (40+ min)
         )
         
         if result.returncode != 0:
