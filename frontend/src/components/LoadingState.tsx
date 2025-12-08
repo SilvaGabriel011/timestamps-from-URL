@@ -3,8 +3,9 @@ import { Loader2 } from 'lucide-react';
 
 export function LoadingState() {
   return (
-    <Card className="bg-slate-800/50 border-slate-700 mt-6">
-      <CardContent className="flex flex-col items-center justify-center py-12">
+    <div className="animated-border-gradient mt-6">
+      <Card className="bg-slate-800/95 border-0">
+        <CardContent className="flex flex-col items-center justify-center py-12">
         <Loader2 className="h-12 w-12 text-blue-400 animate-spin mb-4" />
         <h3 className="text-lg font-semibold text-white mb-2">
           Processando vídeo...
@@ -28,6 +29,7 @@ export function LoadingState() {
           </div>
         </div>
       </CardContent>
-    </Card>
+      </Card>
+    </div>
   );
 }
